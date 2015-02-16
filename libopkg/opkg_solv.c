@@ -1165,7 +1165,9 @@ void prepare_recommends()
             recp = s->repo->idarraydata + s->recommends;
             while ((rec = *recp++) != 0) {           /* go through all recommends */
                 int exlude = 0;
+                int exists = 0;
                 FOR_PROVIDES(p2, pp2, rec) {
+                    exists = 1;
                     for (i = 0; i < excludes.count; i++) {
                         if (p2 == excludes.elements[i]) {
                             exlude = 1;
@@ -1175,10 +1177,11 @@ void prepare_recommends()
                     if (exlude)
                         break;
                 }
-                if (!exlude) {
+                if (!exlude && exists) {
                     /* Currently libsolv doesn't respect RECOMMENDS as a strong dependency,
                      * so we should move all RECOMMENDS to REQUIRES (DEPENDS)
-                     */
+                     * Also as RECOMMENDS is not an absolute dependency we should check it
+                     * before we move it into REQUIRES */
                     solvable_add_deparray(s, SOLVABLE_REQUIRES, rec, -SOLVABLE_PREREQMARKER);
                 }
             }
