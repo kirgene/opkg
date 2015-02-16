@@ -51,7 +51,7 @@ enum {
     ARGS_OPT_ADD_DEST,
     ARGS_OPT_ADD_EXCLUDE,
     ARGS_OPT_NOACTION,
-    ARGS_OPT_CONFIRM,
+    ARGS_OPT_BATCH,
     ARGS_OPT_DOWNLOAD_ONLY,
     ARGS_OPT_NODEPS,
     ARGS_OPT_AUTOREMOVE,
@@ -97,7 +97,7 @@ static struct option long_options[] = {
     {"prefer-arch-to-version", 0, 0, ARGS_OPT_PREFER_ARCH_TO_VERSION},
     {"prefer-arch-to-version", 0, 0, ARGS_OPT_PREFER_ARCH_TO_VERSION},
     {"noaction", 0, 0, ARGS_OPT_NOACTION},
-    {"confirm", 0, 0, ARGS_OPT_CONFIRM},
+    {"batch", 0, 0, ARGS_OPT_BATCH},
     {"download-only", 0, 0, ARGS_OPT_DOWNLOAD_ONLY},
     {"nodeps", 0, 0, ARGS_OPT_NODEPS},
     {"no-install-recommends", 0, 0, ARGS_OPT_NO_INSTALL_RECOMMENDS},
@@ -212,8 +212,8 @@ static int args_parse(int argc, char *argv[])
         case ARGS_OPT_NOACTION:
             opkg_config->noaction = 1;
             break;
-        case ARGS_OPT_CONFIRM:
-            opkg_config->confirm = 1;
+        case ARGS_OPT_BATCH:
+            opkg_config->batch = 1;
             break;
         case ARGS_OPT_DOWNLOAD_ONLY:
             opkg_config->download_only = 1;
@@ -305,7 +305,7 @@ static void usage()
     printf("\t--prefer-arch-to-version        Use the architecture priority package rather\n");
     printf("\t                                than the higher version one if more\n");
     printf("\t                                than one candidate is found.\n");
-    printf("\t--confirm                       Ask for confirmation\n");
+    printf("\t--batch                         Process in batch (unattended) mode\n");
 
     printf("\nForce Options:\n");
     printf("\t--force-depends                 Install/remove despite failed dependencies\n");

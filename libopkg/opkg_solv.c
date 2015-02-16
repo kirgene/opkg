@@ -651,7 +651,7 @@ int process_job(Solver *solver, Queue *job)
 
         if (!solver_solve(solver, job))
             break;
-        if (opkg_config->confirm) {
+        if (!opkg_config->batch) {
             pcnt = solver_problem_count(solver);
             printf("Found %d problems:\n", pcnt);
             for (problem = 1; problem <= pcnt; problem++) {
@@ -726,7 +726,7 @@ int process_job(Solver *solver, Queue *job)
     /* display transaction to the user and ask for confirmation */
     printf("\n");
 
-    if (opkg_config->confirm) {
+    if (!opkg_config->batch) {
         printf("Transaction summary:\n\n");
         transaction_print(trans);
 

@@ -105,7 +105,7 @@ typedef struct opkg_conf {
     int volatile_cache;
     int combine;
     int cache_local_files;
-	int confirm;
+	int batch;
 
     /* ssl options: used only when opkg is configured with '--enable-curl',
      * otherwise always NULL or 0.
