@@ -27,57 +27,47 @@
 #include <malloc.h>
 #include <stdlib.h>
 
+#include <solv/solver.h>
+#include <solv/selection.h>
+#include <solv/solverdebug.h>
+
 #include "opkg_conf.h"
 #include "opkg_cmd.h"
 #include "opkg_message.h"
 #include "release.h"
-#include "pkg.h"
 #include "pkg_dest.h"
-#include "pkg_parse.h"
 #include "sprintf_alloc.h"
-#include "pkg.h"
 #include "file_util.h"
 #include "opkg_utils.h"
 #include "opkg_download.h"
 #include "opkg_install.h"
 #include "opkg_upgrade.h"
-#include "opkg_remove.h"
 #include "opkg_configure.h"
 #include "opkg_verify.h"
 #include "xsystem.h"
 #include "xfuncs.h"
+#include "opkg_solv.h"
 
-static void print_pkg(pkg_t * pkg)
+void populate_arch_list()
 {
-    char *version = pkg_version_str_alloc(pkg);
-    if (pkg->description)
-        printf("%s - %s - %s\n", pkg->name, version, pkg->description);
-    else
-        printf("%s - %s\n", pkg->name, version);
-    free(version);
-}
-
-int opkg_state_changed;
-
-static void write_status_files_if_changed(void)
-{
-    if (opkg_state_changed && !opkg_config->noaction) {
-        opkg_msg(INFO, "Writing status file.\n");
-        opkg_conf_write_status_files();
-        pkg_write_changed_filelists();
-        if (!opkg_config->offline_root)
-            sync();
-    } else {
-        opkg_msg(DEBUG, "Nothing to be done.\n");
+    nv_pair_list_elt_t *l;
+    list_for_each_entry(l, &opkg_config->arch_list.head, node) {
+        nv_pair_t *nv = (nv_pair_t *) l->data;
+        opkg_solv_add_arch(nv->name, atoi(nv->value));
     }
 }
 
-static void sigint_handler(int sig)
+str_list_t* pkg_names_from_args(int argc, char **argv)
 {
-    signal(sig, SIG_DFL);
-    opkg_msg(NOTICE, "Interrupted. Writing out status database.\n");
-    write_status_files_if_changed();
-    exit(128 + sig);
+    str_list_t *pkg_names;
+    int i;
+    if (!argc)
+        return NULL;
+    pkg_names = str_list_alloc();
+    for (i = 0; i < argc; i++) {
+        str_list_append(pkg_names, argv[i]);
+    }
+    return pkg_names;
 }
 
 static int opkg_update_cmd(int argc, char **argv)
@@ -231,96 +221,10 @@ static int opkg_finalize_intercepts(opkg_intercept_t ctx)
     return err;
 }
 
-/* For package pkg do the following: If it is already visited, return. If not,
-   add it in visited list and recurse to its deps. Finally, add it to ordered
-   list.
-   pkg_vec all contains all available packages in repos.
-   pkg_vec visited contains packages already visited by this function, and is
-   used to end recursion and avoid an infinite loop on graph cycles.
-   pkg_vec ordered will finally contain the ordered set of packages.
-*/
-static int opkg_recurse_pkgs_in_order(pkg_t * pkg, pkg_vec_t * all,
-                                      pkg_vec_t * visited, pkg_vec_t * ordered)
-{
-    int j, k;
-    unsigned int i, l, m;
-    int count;
-    pkg_t *dep;
-    compound_depend_t *compound_depend;
-    depend_t **possible_satisfiers;
-    abstract_pkg_t *abpkg;
-    abstract_pkg_t **dependents;
-
-    /* If it's just an available package, that is, not installed and not even
-     * unpacked, skip it */
-    /* XXX: This is probably an overkill, since a state_status != SS_UNPACKED
-     * would do here. However, if there is an intermediate node (pkg) that is
-     * configured and installed between two unpacked packages, the latter
-     * won't be properly reordered, unless all installed/unpacked pkgs are
-     * checked */
-    if (pkg->state_status == SS_NOT_INSTALLED)
-        return 0;
-
-    /* If the  package has already been visited (by this function), skip it */
-    for (i = 0; i < visited->len; i++)
-        if (!strcmp(visited->pkgs[i]->name, pkg->name)) {
-            opkg_msg(DEBUG, "pkg %s already visited, skipping.\n", pkg->name);
-            return 0;
-        }
-
-    pkg_vec_insert(visited, pkg);
-
-    count = pkg->pre_depends_count + pkg->depends_count +
-        pkg->recommends_count + pkg->suggests_count;
-
-    opkg_msg(DEBUG, "pkg %s.\n", pkg->name);
-
-    /* Iterate over all the dependencies of pkg. For each one, find a package
-     * that is either installed or unpacked and satisfies this dependency.
-     * (there should only be one such package per dependency installed or
-     * unpacked). Then recurse to the dependency package */
-    for (j = 0; j < count; j++) {
-        compound_depend = &pkg->depends[j];
-        possible_satisfiers = compound_depend->possibilities;
-        for (k = 0; k < compound_depend->possibility_count; k++) {
-            abpkg = possible_satisfiers[k]->pkg;
-            dependents = abpkg->provided_by->pkgs;
-            l = 0;
-            if (dependents != NULL)
-                while (l < abpkg->provided_by->len && dependents[l] != NULL) {
-                    opkg_msg(DEBUG, "Descending on pkg %s.\n",
-                             dependents[l]->name);
-
-                    /* find whether dependent l is installed or unpacked,
-                     * and then find which package in the list satisfies it */
-                    for (m = 0; m < all->len; m++) {
-                        dep = all->pkgs[m];
-                        if (dep->state_status != SS_NOT_INSTALLED)
-                            if (!strcmp(dep->name, dependents[l]->name)) {
-                                opkg_recurse_pkgs_in_order(dep, all, visited,
-                                                           ordered);
-                                /* Stop the outer loop */
-                                l = abpkg->provided_by->len;
-                                /* break from the inner loop */
-                                break;
-                            }
-                    }
-                    l++;
-                }
-        }
-    }
-
-    /* When all recursions from this node down, are over, and all
-     * dependencies have been added in proper order in the ordered array, add
-     * also the package pkg to ordered array */
-    pkg_vec_insert(ordered, pkg);
-
-    return 0;
-
-}
-
 static int opkg_configure_packages(char *pkg_name)
 {
+    //TODO: implement through SOLV during install
+#if 0
     pkg_vec_t *all, *ordered, *visited;
     unsigned int i;
     pkg_t *pkg;
@@ -385,17 +289,186 @@ static int opkg_configure_packages(char *pkg_name)
     pkg_vec_free(visited);
 
     return err;
+#endif
+    return 0;
 }
 
 static int opkg_remove_cmd(int argc, char **argv);
 
 static int opkg_install_cmd(int argc, char **argv)
 {
+    int err;
+    str_list_t *pkg_names;
+    populate_arch_list();
+    opkg_solv_prepare();
+    pkg_names = pkg_names_from_args(argc, argv);
+    err = opkg_solv_process(pkg_names, MODE_INSTALL);
+    return err;
+#if 0
     int i;
     char *arg;
     int err = 0;
     str_list_t *pkg_names_to_install = NULL;
     int r;
+
+    Queue job;
+
+
+#if 0
+	{
+		/* list mode, no solver needed */
+		Queue q;
+		queue_init(&job);
+		queue_init(&q);
+		for (i = 0; i < job.count; i += 2)
+		{
+			int j;
+			queue_empty(&q);
+			pool_job2solvables(opkg_config->pool, &q, job.elements[i], job.elements[i + 1]);
+			for (j = 0; j < q.count; j++)
+			{
+				Solvable *s = pool_id2solvable(opkg_config->pool, q.elements[j]);
+				{
+					const char *str;
+					printf("Name:        %s\n", pool_solvable2str(opkg_config->pool, s));
+					printf("Repo:        %s\n", s->repo->name);
+					printf("Summary:     %s\n", solvable_lookup_str(s, SOLVABLE_SUMMARY));
+					str = solvable_lookup_str(s, SOLVABLE_URL);
+					if (str)
+						printf("Url:         %s\n", str);
+					str = solvable_lookup_str(s, SOLVABLE_LICENSE);
+					if (str)
+						printf("License:     %s\n", str);
+#if 0
+					str = solvable_lookup_sourcepkg(s);
+					if (str)
+						printf("Source:      %s\n", str);
+#endif
+					printf("Description:\n%s\n", solvable_lookup_str(s, SOLVABLE_DESCRIPTION));
+					printf("\n");
+				}
+			}
+		}
+	}
+	exit(1);
+#endif
+
+
+
+
+	{
+    int err;
+    unsigned int i;
+    char *package_name = "udev";
+	Transaction *trans;
+    Id p;
+	Solver *solv = 0;
+/*
+    repo = repo_create(opkg_config->pool, "@commandline");
+    p = repo_add_deb(repo, (const char *)package_name, REPO_REUSE_REPODATA|REPO_NO_INTERNALIZE);
+    if (!p)
+    {
+        fprintf(stderr, "could not add '%s'\n", argv[i]);
+        exit(1);
+    }
+	*/
+	pool_addfileprovides(opkg_config->pool);
+    pool_createwhatprovides(opkg_config->pool);
+    queue_init(&job);
+    queue_push2(&job, SOLVER_SOLVABLE_ALL, 0);
+	int mode = SOLVER_UPDATE;
+	
+	for (i = 0; i < job.count; i += 2)
+	{
+		job.elements[i] |= mode;
+		if (mode == SOLVER_UPDATE && pool_isemptyupdatejob(opkg_config->pool, job.elements[i], job.elements[i + 1]))
+			job.elements[i] ^= SOLVER_UPDATE ^ SOLVER_INSTALL;
+	}
+	
+    solv = solver_create(opkg_config->pool);
+//    solver_set_flag(solv, SOLVER_FLAG_SPLITPROVIDES, 1);
+//
+        solver_solve(solv, &job);
+/*
+    for (;;)
+    {
+        Id problem, solution;
+        int pcnt, scnt;
+
+        if (!solver_solve(solv, &job))
+            break;
+        pcnt = solver_problem_count(solv);
+        printf("Found %d problems:\n", pcnt);
+        for (problem = 1; problem <= pcnt; problem++)
+        {
+            int take = 0;
+            printf("Problem %d/%d:\n", problem, pcnt);
+            solver_printprobleminfo(solv, problem);
+            printf("\n");
+            scnt = solver_solution_count(solv, problem);
+            for (solution = 1; solution <= scnt; solution++)
+            {
+                printf("Solution %d:\n", solution);
+                solver_printsolution(solv, problem, solution);
+                printf("\n");
+            }
+            for (;;)
+            {
+                char inbuf[128], *ip;
+                printf("Please choose a solution: ");
+                fflush(stdout);
+                *inbuf = 0;
+                if (!(ip = fgets(inbuf, sizeof(inbuf), stdin)))
+                {
+                    printf("Abort.\n");
+                    exit(1);
+                }
+                while (*ip == ' ' || *ip == '\t')
+                    ip++;
+                if (*ip >= '0' && *ip <= '9')
+                {
+                    take = atoi(ip);
+                    if (take >= 1 && take <= scnt)
+                        break;
+                }
+                if (*ip == 's')
+                {
+                    take = 0;
+                    break;
+                }
+                if (*ip == 'q')
+                {
+                    printf("Abort.\n");
+                    exit(1);
+                }
+            }
+            if (!take)
+                continue;
+            solver_take_solution(solv, problem, take, &job);
+        }
+    }
+	*/
+
+    trans = solver_create_transaction(solv);
+    if (!trans->steps.count)
+    {
+        printf("Nothing to do.\n");
+        transaction_free(trans);
+        solver_free(solv);
+        queue_free(&job);
+//        pool_free(pool);
+//        free_repoinfos(repoinfos, nrepoinfos);
+//        solv_free(commandlinepkgs);
+        exit(1);
+    }
+    /* display transaction to the user and ask for confirmation */
+    printf("\n");
+    printf("Transaction summary:\n\n");
+    transaction_print(trans);
+    exit(1);
+
+
+	}
 
     signal(SIGINT, sigint_handler);
 
@@ -443,19 +516,23 @@ static int opkg_install_cmd(int argc, char **argv)
     write_status_files_if_changed();
 
     return err;
+#endif
 }
 
 static int opkg_upgrade_cmd(int argc, char **argv)
 {
-    int i;
-    unsigned int j;
-    pkg_t *pkg;
-    int err = 0;
-    pkg_vec_t *pkgs_to_upgrade = NULL;
-    int r;
+    int err;
+    str_list_t *pkg_names;
+    populate_arch_list();
+    opkg_solv_prepare();
+    pkg_names = pkg_names_from_args(argc, argv);
+#if 0
+    err = opkg_solv_process(pkg_names, MODE_UPGRADE);
+#endif
+    err = opkg_solv_process(pkg_names, MODE_DIST_UPGRADE);
+    return err;
 
-    signal(SIGINT, sigint_handler);
-
+#if 0
     if (argc) {
         pkg_info_preinstall_check();
 
@@ -521,10 +598,13 @@ static int opkg_upgrade_cmd(int argc, char **argv)
     write_status_files_if_changed();
 
     return err;
+#endif
 }
 
 static int opkg_download_cmd(int argc, char **argv)
 {
+    //TODO: IMPLEMENT
+#if 0
     int i, err = 0;
     char *arg;
     pkg_t *pkg;
@@ -551,57 +631,29 @@ static int opkg_download_cmd(int argc, char **argv)
     }
 
     return err;
+#endif
 }
 
 static int opkg_list_cmd(int argc, char **argv)
 {
-    unsigned int i;
-    pkg_vec_t *available;
-    pkg_t *pkg;
-    char *pkg_name = NULL;
-
-    if (argc > 0) {
-        pkg_name = argv[0];
-    }
-    available = pkg_vec_alloc();
-    pkg_hash_fetch_available(available);
-    pkg_vec_sort(available, pkg_compare_names);
-    for (i = 0; i < available->len; i++) {
-        pkg = available->pkgs[i];
-        /* if we have package name or pattern and pkg does not match, then skip it */
-        if (pkg_name && fnmatch(pkg_name, pkg->name, 0))
-            continue;
-        print_pkg(pkg);
-    }
-    pkg_vec_free(available);
-
-    return 0;
+    int err;
+    str_list_t *pkg_names;
+    populate_arch_list();
+    opkg_solv_prepare();
+    pkg_names = pkg_names_from_args(argc, argv);
+    err = opkg_solv_process(pkg_names, MODE_LIST);
+    return err;
 }
 
 static int opkg_list_installed_cmd(int argc, char **argv)
 {
-    unsigned int i;
-    pkg_vec_t *available;
-    pkg_t *pkg;
-    char *pkg_name = NULL;
-
-    if (argc > 0) {
-        pkg_name = argv[0];
-    }
-    available = pkg_vec_alloc();
-    pkg_hash_fetch_all_installed(available);
-    pkg_vec_sort(available, pkg_compare_names);
-    for (i = 0; i < available->len; i++) {
-        pkg = available->pkgs[i];
-        /* if we have package name or pattern and pkg does not match, then skip it */
-        if (pkg_name && fnmatch(pkg_name, pkg->name, 0))
-            continue;
-        print_pkg(pkg);
-    }
-
-    pkg_vec_free(available);
-
-    return 0;
+    int err;
+    str_list_t *pkg_names;
+    populate_arch_list();
+    opkg_solv_prepare();
+    pkg_names = pkg_names_from_args(argc, argv);
+    err = opkg_solv_process(pkg_names, MODE_LIST_INSTALLED);
+    return err;
 }
 
 static int opkg_list_changed_conffiles_cmd(int argc, char **argv)
@@ -617,8 +669,8 @@ static int opkg_list_changed_conffiles_cmd(int argc, char **argv)
         pkg_name = argv[0];
     }
     available = pkg_vec_alloc();
-    pkg_hash_fetch_all_installed(available);
-    pkg_vec_sort(available, pkg_compare_names);
+//    pkg_hash_fetch_all_installed(available);
+//    pkg_vec_sort(available, pkg_compare_names);
     for (i = 0; i < available->len; i++) {
         pkg = available->pkgs[i];
         /* if we have package name or pattern and pkg does not match, then skip it */
@@ -639,6 +691,7 @@ static int opkg_list_changed_conffiles_cmd(int argc, char **argv)
 
 static int opkg_list_upgradable_cmd(int argc, char **argv)
 {
+#if 0
     struct active_list *head = prepare_upgrade_list();
     struct active_list *node = NULL;
     pkg_t *_old_pkg, *_new_pkg;
@@ -646,7 +699,7 @@ static int opkg_list_upgradable_cmd(int argc, char **argv)
     for (node = active_list_next(head, head); node;
             node = active_list_next(head, node)) {
         _old_pkg = list_entry(node, pkg_t, list);
-        _new_pkg = pkg_hash_fetch_best_installation_candidate_by_name(_old_pkg->name);
+   //     _new_pkg = pkg_hash_fetch_best_installation_candidate_by_name(_old_pkg->name);
         if (_new_pkg == NULL)
             continue;
         old_v = pkg_version_str_alloc(_old_pkg);
@@ -657,10 +710,13 @@ static int opkg_list_upgradable_cmd(int argc, char **argv)
     }
     active_list_head_delete(head);
     return 0;
+#endif
 }
 
 static int opkg_info_status_cmd(int argc, char **argv, int installed_only)
 {
+    //TODO: Implement
+    #if 0
     unsigned int i, err;
     pkg_vec_t *available;
     pkg_t *pkg;
@@ -672,11 +728,12 @@ static int opkg_info_status_cmd(int argc, char **argv, int installed_only)
     }
 
     available = pkg_vec_alloc();
+    /*
     if (installed_only)
         pkg_hash_fetch_all_installed(available);
     else
         pkg_hash_fetch_available(available);
-
+*/
     for (i = 0; i < available->len; i++) {
         pkg = available->pkgs[i];
         if (pkg_name && fnmatch(pkg_name, pkg->name, 0)) {
@@ -705,11 +762,12 @@ static int opkg_info_status_cmd(int argc, char **argv, int installed_only)
         err = pkg_init_from_file(pkg, pkg_name);
         if (err)
             return err;
-        hash_insert_pkg(pkg, 0);
+   //     hash_insert_pkg(pkg, 0);
         pkg_formatted_info(stdout, pkg);
     }
 
     return 0;
+#endif
 }
 
 static int opkg_info_cmd(int argc, char **argv)
@@ -724,6 +782,8 @@ static int opkg_status_cmd(int argc, char **argv)
 
 static int opkg_configure_cmd(int argc, char **argv)
 {
+#if 0
+    //TODO: IMPLEMENT (do we need this???)
     int err;
     char *pkg_name = NULL;
 
@@ -735,6 +795,7 @@ static int opkg_configure_cmd(int argc, char **argv)
     write_status_files_if_changed();
 
     return err;
+#endif
 }
 
 static int opkg_clean_cmd(int argc, char **argv)
@@ -746,6 +807,14 @@ static int opkg_clean_cmd(int argc, char **argv)
 
 static int opkg_remove_cmd(int argc, char **argv)
 {
+    int err;
+    str_list_t *pkg_names;
+    populate_arch_list();
+    opkg_solv_prepare();
+    pkg_names = pkg_names_from_args(argc, argv);
+    err = opkg_solv_process(pkg_names, MODE_REMOVE);
+    return err;
+#if 0
     int i, done, err = 0;
     unsigned int a;
     pkg_t *pkg;
@@ -799,13 +868,29 @@ static int opkg_remove_cmd(int argc, char **argv)
 
     write_status_files_if_changed();
     return err;
+#endif
 }
 
 static int opkg_flag_cmd(int argc, char **argv)
 {
+    int err;
+    str_list_t *pkg_names;
+    opkg_solv_mode_t mode = opkg_solv_mode_from_flag_str(argv[0]);
+    if (mode == MODE_UNKNOWN) {
+        opkg_msg(ERROR, "Unknown flag '%s'.\n", argv[0]);
+        err = -1;
+    } else {
+        populate_arch_list();
+        opkg_solv_prepare();
+        pkg_names = pkg_names_from_args(argc - 1, argv + 1);
+        err = opkg_solv_process(pkg_names, mode);
+    }
+    return err;
+    //TODO: IMPLEMENT
+#if 0
     int i;
     pkg_t *pkg;
-    const char *flags = argv[0];
+
 
     signal(SIGINT, sigint_handler);
 
@@ -844,10 +929,20 @@ static int opkg_flag_cmd(int argc, char **argv)
 
     write_status_files_if_changed();
     return 0;
+#endif
 }
 
 static int opkg_files_cmd(int argc, char **argv)
 {
+    int err;
+    str_list_t *pkg_names;
+    populate_arch_list();
+    opkg_solv_prepare();
+    pkg_names = pkg_names_from_args(argc, argv);
+    err = opkg_solv_process(pkg_names, MODE_FILES);
+    return err;
+//TODO: IMPLEMENT
+#if 0
     pkg_t *pkg;
     str_list_t *files;
     str_list_elt_t *iter;
@@ -876,10 +971,13 @@ static int opkg_files_cmd(int argc, char **argv)
     pkg_free_installed_files(pkg);
 
     return 0;
+#endif
 }
 
 static int opkg_depends_cmd(int argc, char **argv)
 {
+//TODO: IMPLEMENT
+#if 0
     int i, k;
     unsigned int j;
     int depends_count;
@@ -924,8 +1022,10 @@ static int opkg_depends_cmd(int argc, char **argv)
 
     pkg_vec_free(available_pkgs);
     return 0;
+#endif
 }
 
+/*
 static int pkg_mark_provides(pkg_t * pkg)
 {
     int provides_count = pkg->provides_count;
@@ -937,6 +1037,7 @@ static int pkg_mark_provides(pkg_t * pkg)
     }
     return 0;
 }
+*/
 
 enum what_field_type {
     WHATDEPENDS,
@@ -947,9 +1048,11 @@ enum what_field_type {
     WHATSUGGESTS
 };
 
-static int opkg_what_depends_conflicts_cmd(enum depend_type what_field_type,
+static int opkg_what_depends_conflicts_cmd(int what_field_type,
                                            int recursive, int argc, char **argv)
 {
+//TODO: IMPLEMENT
+#if 0
     depend_t *possibility;
     compound_depend_t *cdep;
     pkg_vec_t *available_pkgs;
@@ -1053,36 +1156,53 @@ static int opkg_what_depends_conflicts_cmd(enum depend_type what_field_type,
     pkg_vec_free(available_pkgs);
 
     return 0;
+#endif
 }
 
 static int opkg_whatdepends_recursively_cmd(int argc, char **argv)
-{
+{//TODO: IMPLEMENT
+#if 0
     return opkg_what_depends_conflicts_cmd(DEPEND, 1, argc, argv);
+#endif
 }
 
 static int opkg_whatdepends_cmd(int argc, char **argv)
 {
+//TODO: IMPLEMENT
+#if 0
     return opkg_what_depends_conflicts_cmd(DEPEND, 0, argc, argv);
+#endif
 }
 
 static int opkg_whatsuggests_cmd(int argc, char **argv)
 {
+//TODO: IMPLEMENT
+#if 0
     return opkg_what_depends_conflicts_cmd(SUGGEST, 0, argc, argv);
+#endif
 }
 
 static int opkg_whatrecommends_cmd(int argc, char **argv)
 {
+//TODO: IMPLEMENT
+#if 0
     return opkg_what_depends_conflicts_cmd(RECOMMEND, 0, argc, argv);
+#endif
 }
 
 static int opkg_whatconflicts_cmd(int argc, char **argv)
 {
+//TODO: IMPLEMENT
+#if 0
     return opkg_what_depends_conflicts_cmd(CONFLICTS, 0, argc, argv);
+#endif
 }
 
 static int opkg_what_provides_replaces_cmd(enum what_field_type what_field_type,
                                            int argc, char **argv)
 {
+//TODO: IMPLEMENT
+#if 0
     if (argc > 0) {
         pkg_vec_t *available_pkgs = pkg_vec_alloc();
         const char *rel_str = (what_field_type == WHATPROVIDES ? "provides" : "replaces");
@@ -1117,6 +1237,7 @@ static int opkg_what_provides_replaces_cmd(enum what_field_type what_field_type,
         pkg_vec_free(available_pkgs);
     }
     return 0;
+#endif
 }
 
 static int opkg_whatprovides_cmd(int argc, char **argv)
@@ -1131,6 +1252,8 @@ static int opkg_whatreplaces_cmd(int argc, char **argv)
 
 static int opkg_search_cmd(int argc, char **argv)
 {
+    //TODO: implement through SOLV
+    /*
     unsigned int i;
 
     pkg_vec_t *installed;
@@ -1163,12 +1286,14 @@ static int opkg_search_cmd(int argc, char **argv)
     }
 
     pkg_vec_free(installed);
-
+*/
     return 0;
 }
 
 static int opkg_compare_versions_cmd(int argc, char **argv)
 {
+//TODO: IMPLEMENT
+#if 0
     if (argc == 3) {
         /* this is a bit gross */
         struct pkg p1, p2;
@@ -1181,10 +1306,13 @@ static int opkg_compare_versions_cmd(int argc, char **argv)
                  "<op> is one of <= >= << >> =\n");
         return -1;
     }
+#endif
 }
 
 static int opkg_print_architecture_cmd(int argc, char **argv)
 {
+//TODO: IMPLEMENT
+#if 0
     nv_pair_list_elt_t *l;
 
     list_for_each_entry(l, &opkg_config->arch_list.head, node) {
@@ -1192,72 +1320,49 @@ static int opkg_print_architecture_cmd(int argc, char **argv)
         printf("arch %s %s\n", nv->name, nv->value);
     }
     return 0;
+#endif
 }
 
 /* XXX: CLEANUP: The usage strings should be incorporated into this
    array for easier maintenance */
 static opkg_cmd_t cmds[] = {
-    {"update", 0, (opkg_cmd_fun_t) opkg_update_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"upgrade", 0, (opkg_cmd_fun_t) opkg_upgrade_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"list", 0, (opkg_cmd_fun_t) opkg_list_cmd, PFM_SOURCE},
-    {"list_installed", 0, (opkg_cmd_fun_t) opkg_list_installed_cmd, PFM_SOURCE},
-    {"list-installed", 0, (opkg_cmd_fun_t) opkg_list_installed_cmd, PFM_SOURCE},
-    {"list_upgradable", 0, (opkg_cmd_fun_t) opkg_list_upgradable_cmd,
-        PFM_SOURCE},
-    {"list-upgradable", 0, (opkg_cmd_fun_t) opkg_list_upgradable_cmd,
-        PFM_SOURCE},
+    {"update", 0, (opkg_cmd_fun_t) opkg_update_cmd},
+    {"upgrade", 0, (opkg_cmd_fun_t) opkg_upgrade_cmd},
+    {"list", 0, (opkg_cmd_fun_t) opkg_list_cmd},
+    {"list_installed", 0, (opkg_cmd_fun_t) opkg_list_installed_cmd},
+    {"list-installed", 0, (opkg_cmd_fun_t) opkg_list_installed_cmd},
+    {"list_upgradable", 0, (opkg_cmd_fun_t) opkg_list_upgradable_cmd},
+    {"list-upgradable", 0, (opkg_cmd_fun_t) opkg_list_upgradable_cmd},
     {"list_changed_conffiles", 0,
-        (opkg_cmd_fun_t) opkg_list_changed_conffiles_cmd, PFM_SOURCE},
+        (opkg_cmd_fun_t) opkg_list_changed_conffiles_cmd},
     {"list-changed-conffiles", 0,
-        (opkg_cmd_fun_t) opkg_list_changed_conffiles_cmd, PFM_SOURCE},
-    {"info", 0, (opkg_cmd_fun_t) opkg_info_cmd, 0},
-    {"flag", 1, (opkg_cmd_fun_t) opkg_flag_cmd, PFM_DESCRIPTION | PFM_SOURCE},
-    {"status", 0, (opkg_cmd_fun_t) opkg_status_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"install", 1, (opkg_cmd_fun_t) opkg_install_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"remove", 1, (opkg_cmd_fun_t) opkg_remove_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"clean", 0, (opkg_cmd_fun_t) opkg_clean_cmd, 0},
-    {"configure", 0, (opkg_cmd_fun_t) opkg_configure_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"files", 1, (opkg_cmd_fun_t) opkg_files_cmd, PFM_DESCRIPTION | PFM_SOURCE},
-    {"search", 1, (opkg_cmd_fun_t) opkg_search_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"download", 1, (opkg_cmd_fun_t) opkg_download_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"compare_versions", 1, (opkg_cmd_fun_t) opkg_compare_versions_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"compare-versions", 1, (opkg_cmd_fun_t) opkg_compare_versions_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"print-architecture", 0, (opkg_cmd_fun_t) opkg_print_architecture_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"print_architecture", 0, (opkg_cmd_fun_t) opkg_print_architecture_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
+        (opkg_cmd_fun_t) opkg_list_changed_conffiles_cmd},
+    {"info", 0, (opkg_cmd_fun_t) opkg_info_cmd},
+    {"flag", 1, (opkg_cmd_fun_t) opkg_flag_cmd},
+    {"status", 0, (opkg_cmd_fun_t) opkg_status_cmd},
+    {"install", 1, (opkg_cmd_fun_t) opkg_install_cmd},
+    {"remove", 1, (opkg_cmd_fun_t) opkg_remove_cmd},
+    {"clean", 0, (opkg_cmd_fun_t) opkg_clean_cmd},
+    {"configure", 0, (opkg_cmd_fun_t) opkg_configure_cmd},
+    {"files", 1, (opkg_cmd_fun_t) opkg_files_cmd},
+    {"search", 1, (opkg_cmd_fun_t) opkg_search_cmd},
+    {"download", 1, (opkg_cmd_fun_t) opkg_download_cmd},
+    {"compare_versions", 1, (opkg_cmd_fun_t) opkg_compare_versions_cmd},
+    {"compare-versions", 1, (opkg_cmd_fun_t) opkg_compare_versions_cmd},
+    {"print-architecture", 0, (opkg_cmd_fun_t) opkg_print_architecture_cmd},
+    {"print_architecture", 0, (opkg_cmd_fun_t) opkg_print_architecture_cmd},
     {"print-installation-architecture", 0,
-        (opkg_cmd_fun_t) opkg_print_architecture_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
+        (opkg_cmd_fun_t) opkg_print_architecture_cmd},
     {"print_installation_architecture", 0,
-        (opkg_cmd_fun_t) opkg_print_architecture_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"depends", 1, (opkg_cmd_fun_t) opkg_depends_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"whatdepends", 1, (opkg_cmd_fun_t) opkg_whatdepends_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"whatdependsrec", 1, (opkg_cmd_fun_t) opkg_whatdepends_recursively_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"whatrecommends", 1, (opkg_cmd_fun_t) opkg_whatrecommends_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"whatsuggests", 1, (opkg_cmd_fun_t) opkg_whatsuggests_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"whatprovides", 1, (opkg_cmd_fun_t) opkg_whatprovides_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"whatreplaces", 1, (opkg_cmd_fun_t) opkg_whatreplaces_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
-    {"whatconflicts", 1, (opkg_cmd_fun_t) opkg_whatconflicts_cmd,
-        PFM_DESCRIPTION | PFM_SOURCE},
+        (opkg_cmd_fun_t) opkg_print_architecture_cmd},
+    {"depends", 1, (opkg_cmd_fun_t) opkg_depends_cmd},
+    {"whatdepends", 1, (opkg_cmd_fun_t) opkg_whatdepends_cmd},
+    {"whatdependsrec", 1, (opkg_cmd_fun_t) opkg_whatdepends_recursively_cmd},
+    {"whatrecommends", 1, (opkg_cmd_fun_t) opkg_whatrecommends_cmd},
+    {"whatsuggests", 1, (opkg_cmd_fun_t) opkg_whatsuggests_cmd},
+    {"whatprovides", 1, (opkg_cmd_fun_t) opkg_whatprovides_cmd},
+    {"whatreplaces", 1, (opkg_cmd_fun_t) opkg_whatreplaces_cmd},
+    {"whatconflicts", 1, (opkg_cmd_fun_t) opkg_whatconflicts_cmd},
 };
 
 opkg_cmd_t *opkg_cmd_find(const char *name)

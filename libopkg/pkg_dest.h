@@ -32,6 +32,7 @@ struct pkg_dest {
     char *info_dir;
     char *status_file_name;
     FILE *status_fp;
+    int changed;
 };
 
 int pkg_dest_init(pkg_dest_t * dest, const char *name,

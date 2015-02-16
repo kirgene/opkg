@@ -37,23 +37,8 @@ o.write_list()
 
 opkgcl.update()
 
-# 'opkg upgrade b' should fail as it won't upgrade a
-opkgcl.upgrade("b")
-
-# Check 'a' has not been upgraded
-if opkgcl.is_installed("a", "1.1"):
-	opk.fail("Package 'a' upgraded despite not being listed in packages to upgrade.")
-if not opkgcl.is_installed("a", "1.0"):
-	opk.fail("Package 'a' version 1.0 removed.")
-
-# Check 'b' has not been upgraded
-if opkgcl.is_installed("b", "1.1"):
-	opk.fail("Package 'b' upgraded despite breaking dependency of package 'a'.")
-if not opkgcl.is_installed("b", "1.0"):
-	opk.fail("Package 'b' version 1.0 removed.")
-
 # 'opkg upgrade a' should succeed and upgrade both a and b
-opkgcl.upgrade("a")
+opkgcl.upgrade("b")
 
 # Check 'a' has been upgraded
 if not opkgcl.is_installed("a", "1.1"):

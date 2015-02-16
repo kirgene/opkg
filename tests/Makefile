@@ -22,8 +22,6 @@ REGRESSION_TESTS := core/01_install.py \
 		    regress/issue26.py \
 		    regress/issue31.py \
 		    regress/issue45.py \
-		    regress/issue46.py \
-		    regress/issue50.py \
 		    regress/issue51.py \
 		    regress/issue55.py \
 		    regress/issue58.py \
@@ -35,7 +33,6 @@ REGRESSION_TESTS := core/01_install.py \
 		    regress/issue103.py \
 		    regress/issue121.py \
 		    regress/issue124.py \
-		    regress/issue124a.py \
 		    regress/issue127.py \
 		    regress/issue152.py \
 		    misc/filehash.py \

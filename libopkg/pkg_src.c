@@ -67,6 +67,8 @@ int pkg_src_download(pkg_src_t * src)
     else
         sprintf_alloc(&url, "%s/%s", src->value, url_filename);
 
+    opkg_msg(NOTICE, "Downloading package list for %s ...\n", src->name);
+
     if (src->gzip) {
         char *cache_location;
 

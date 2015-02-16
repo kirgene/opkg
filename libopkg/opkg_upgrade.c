@@ -27,6 +27,7 @@
 #include "opkg_message.h"
 #include "xfuncs.h"
 
+#if 0
 typedef struct upgrade_pair {
     pkg_t *old;
     pkg_t *new;
@@ -98,19 +99,38 @@ static int opkg_prepare_upgrade_pkg(pkg_t * old, pkg_t ** pkg)
     *pkg = new;
     return 1;
 }
+#endif
 
-int opkg_upgrade_pkg(pkg_t * old)
+int opkg_upgrade_pkg(pkg_t *old, pkg_t *new)
 {
-    pkg_t *new;
     int r;
 
-    r = opkg_prepare_upgrade_pkg(old, &new);
-    if (r <= 0)
-        return r;
+#if 0
+    if (old->state_flag & SF_HOLD) {
+        opkg_msg(NOTICE,
+                 "Not upgrading package %s which is marked "
+                 "hold (flags=%#x).\n", old->name, old->state_flag);
+        return 0;
+    }
+
+    if (old->state_flag & SF_REPLACE) {
+        opkg_msg(NOTICE,
+                 "Not upgrading package %s which is marked "
+                 "replace (flags=%#x).\n", old->name, old->state_flag);
+        return 0;
+    }
+#endif
+
+    old->state_want = SW_DEINSTALL;
+    new->state_want = SW_INSTALL;
+    new->dest = old->dest;
+    new->state_flag = old->state_flag;
+    /* maintain the "Auto-Installed: yes" flag */
+    new->auto_installed = old->auto_installed;
 
     opkg_msg(DEBUG2, "Calling opkg_install_pkg for %s %s.\n", new->name,
              new->version);
-    r = opkg_install_pkg(new, 1);
+    r = opkg_install_pkg(old, new);
     if (r < 0) {
         /* The installation failed so we need to reset the appropriate
          * state_want flags.
@@ -122,6 +142,7 @@ int opkg_upgrade_pkg(pkg_t * old)
     return r;
 }
 
+#if 0
 int opkg_upgrade_multiple_pkgs(pkg_vec_t * pkgs_to_upgrade)
 {
     int r;
@@ -229,3 +250,4 @@ struct active_list *prepare_upgrade_list(void)
     active_list_head_delete(all);
     return head;
 }
+#endif

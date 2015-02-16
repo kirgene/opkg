@@ -5,10 +5,15 @@ import cfg
 
 def opkgcl(opkg_args):
 	cmd = "{} -o {} {}".format(cfg.opkgcl, cfg.offline_root, opkg_args)
+	#print('============================================================')
+	print(cmd)
 	p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
 			stderr=subprocess.STDOUT)
 	(stdout_data, stderr_data) = p.communicate()
 	status = p.returncode
+	print("-------------------")
+	print(stdout_data.decode("utf-8"))
+	print("-------------------")
 	return (status, stdout_data.decode("utf-8"))
 
 def install(pkg_name, flags=""):

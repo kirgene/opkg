@@ -27,6 +27,7 @@ unsigned long get_available_kbytes(char *filesystem);
 char *trim_xstrdup(const char *line);
 int line_is_blank(const char *line);
 int str_starts_with(const char *str, const char *prefix);
+int yesno(const char *str);
 
 #ifdef __cplusplus
 }

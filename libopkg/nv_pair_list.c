@@ -108,3 +108,24 @@ nv_pair_list_elt_t *nv_pair_list_last(nv_pair_list_t * list)
 {
     return (nv_pair_list_elt_t *) void_list_last((void_list_t *) list);
 }
+
+#if 0
+void nv_pair_list_sort(nv_pair_list_t * list, nv_pair_list_compare_t compare)
+{
+    nv_pair_list_elt_t *iter1, *iter2;
+    nv_pair_t *nv_pair1, *nv_pair2;
+
+    list_for_each_entry(iter1, &list->head, node) {
+        list_for_each_entry(iter2, &list.node.prev, node) {
+            void *data;
+            nv_pair1 = (nv_pair_t *) iter2->data;
+            nv_pair2 = (nv_pair_t *) iter2->node.next->data;
+            if ()
+            if (compare(nv_pair->name, name) == 0) {
+                return nv_pair->value;
+            }
+        }
+    }
+    return NULL;
+}
+#endif

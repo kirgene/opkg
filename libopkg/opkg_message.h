@@ -30,7 +30,7 @@ typedef enum {
     NOTICE,                 /* normal but significant condition */
     INFO,                   /* informational message */
     DEBUG,                  /* debug level message */
-    DEBUG2,                 /* more debug level message */
+    DEBUG2                 /* more debug level message */
 } message_level_t;
 
 void free_error_list(void);

@@ -15,7 +15,6 @@ AC_GNU_SOURCE
 define([AC_LIBTOOL_LANG_CXX_CONFIG], [:])
 define([AC_LIBTOOL_LANG_F77_CONFIG], [:])
 
-
 for top_builddir in . .. ../.. $ac_auxdir $ac_auxdir/..; do
   test -f $top_builddir/configure && break
 done
@@ -45,6 +44,7 @@ PKG_PROG_PKG_CONFIG([0.20])
 
 # Require libarchive
 PKG_CHECK_MODULES([LIBARCHIVE], [libarchive])
+PKG_CHECK_MODULES([LIBSOLV], [libsolv])
 
 dnl extra argument: --enable-pathfinder
 AC_ARG_ENABLE(pathfinder,

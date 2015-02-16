@@ -20,6 +20,7 @@
 #define PKG_H
 
 #include <sys/types.h>
+#include <solv/solvable.h>
 
 #include "pkg_vec.h"
 #include "str_list.h"
@@ -28,7 +29,6 @@
 #include "pkg_dest.h"
 #include "opkg_conf.h"
 #include "conffile_list.h"
-#include "pkg_depends.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,6 +61,7 @@ enum pkg_state_flag {
     SF_MARKED = 64,             /* temporary mark */
     SF_FILELIST_CHANGED = 128,  /* needs filelist written */
     SF_USER = 256,
+    SF_CHANGED = 512,
     SF_LAST_STATE_FLAG
 };
 typedef enum pkg_state_flag pkg_state_flag_t;
@@ -80,48 +81,24 @@ enum pkg_state_status {
 };
 typedef enum pkg_state_status pkg_state_status_t;
 
-struct abstract_pkg {
-    char *name;
-    int dependencies_checked;
-    pkg_vec_t *pkgs;
-    pkg_state_status_t state_status;
-    pkg_state_flag_t state_flag;
-
-    abstract_pkg_vec_t *depended_upon_by;
-    abstract_pkg_vec_t *provided_by;
-    abstract_pkg_vec_t *replaced_by;
-};
-
-/* XXX: CLEANUP: I'd like to clean up pkg_t in several ways:
-
-   The 3 version fields should go into a single version struct. (This
-   is especially important since, currently, pkg->version can easily
-   be mistaken for pkg_verson_str_alloc(pkg) although they are very
-   distinct. This has been the source of multiple bugs.
-
-   The 3 state fields could possibly also go into their own struct.
-
-   All fields which deal with lists of packages, (Depends,
-   Pre-Depends, Provides, Suggests, Recommends, Enhances), should each
-   be handled by a single struct in pkg_t
-
-   All string fields for which there is a small set of possible
-   values, (section, maintainer, architecture, maybe version?), that
-   are reused among different packages -- for all such packages we
-   should move from "char *"s to some atom datatype to share data
-   storage and use less memory. We might even do reference counting,
-   but probably not since most often we only create new pkg_t structs,
-   we don't often free them.  */
 struct pkg {
-    char *name;
+    Solvable *solvable;
     unsigned long epoch;
+    char *name;
     char *version;
+    char *url;
     char *revision;
     int force_reinstall;
     pkg_src_t *src;
     pkg_dest_t *dest;
     char *architecture;
     char *section;
+    char *depends_str;
+    char *recommends_str;
+    char *provides_str;
+    char *replaces_str;
+    char *suggests_str;
+    char *conflicts_str;
     char *maintainer;
     char *description;
     char *tags;
@@ -129,31 +106,7 @@ struct pkg {
     pkg_vec_t *wanted_by;
     pkg_state_flag_t state_flag;
     pkg_state_status_t state_status;
-    char **depends_str;
-    unsigned int depends_count;
-    char **pre_depends_str;
-    unsigned int pre_depends_count;
-    char **recommends_str;
-    unsigned int recommends_count;
-    char **suggests_str;
-    unsigned int suggests_count;
     struct active_list list;        /* Used for installing|upgrading */
-    compound_depend_t *depends;
-
-    char **conflicts_str;
-    compound_depend_t *conflicts;
-    unsigned int conflicts_count;
-
-    char **replaces_str;
-    unsigned int replaces_count;
-    abstract_pkg_t **replaces;
-
-    char **provides_str;
-    unsigned int provides_count;
-    abstract_pkg_t **provides;
-
-    abstract_pkg_t *parent;
-
     char *filename;
     char *local_filename;
     char *tmp_unpack_dir;
@@ -184,10 +137,16 @@ struct pkg {
     int auto_installed;
 };
 
-pkg_t *pkg_new(void);
+pkg_t *pkg_new(Solvable *s);
+void pkg_init(pkg_t * pkg, Solvable *s);
 void pkg_deinit(pkg_t * pkg);
 int pkg_init_from_file(pkg_t * pkg, const char *filename);
-abstract_pkg_t *abstract_pkg_new(void);
+
+//const char* pkg_get_str(pkg_t *pkg, pkg_fld_t key);
+//void pkg_set_str(pkg_t *pkg, pkg_fld_t key, char *val);
+//unsigned long pkg_get_num(pkg_t *pkg, pkg_fld_t fld, unsigned long defval);
+void pkg_add_conffile(pkg_t *pkg, const char *file_name, const char *md5sum);
+int pkg_restore_status(pkg_t *pkg, str_list_t *status_tmp);
 
 /*
  * merges fields from newpkg into oldpkg.
@@ -195,12 +154,11 @@ abstract_pkg_t *abstract_pkg_new(void);
  */
 int pkg_merge(pkg_t * oldpkg, pkg_t * newpkg);
 
-char *pkg_version_str_alloc(pkg_t * pkg);
+//void pkg_parse_solvable(pkg_t *pkg);
 
 int pkg_compare_versions(const pkg_t * pkg, const pkg_t * ref_pkg);
 int pkg_compare_versions_no_reinstall(const pkg_t * pkg, const pkg_t * ref_pkg);
 int pkg_name_version_and_architecture_compare(const void *a, const void *b);
-int abstract_pkg_name_compare(const void *a, const void *b);
 
 void pkg_formatted_info(FILE * fp, pkg_t * pkg);
 void pkg_formatted_field(FILE * fp, pkg_t * pkg, const char *field);
@@ -218,13 +176,15 @@ int pkg_run_script(pkg_t * pkg, const char *script, const char *args);
 pkg_state_want_t pkg_state_want_from_str(char *str);
 pkg_state_flag_t pkg_state_flag_from_str(const char *str);
 pkg_state_status_t pkg_state_status_from_str(const char *str);
+const char *pkg_state_status_to_str(pkg_state_status_t ss);
+char *pkg_state_flag_to_str(pkg_state_flag_t sf);
 
 int pkg_version_satisfied(pkg_t * it, pkg_t * ref, const char *op);
 
-int pkg_arch_supported(pkg_t * pkg);
-void pkg_info_preinstall_check(void);
+void pkg_info_preinstall_check(pkg_vec_t *installed_pkgs);
 
 int pkg_write_filelist(pkg_t * pkg);
+int pkg_write_status(pkg_t * pkg);
 int pkg_write_changed_filelists(void);
 
 int pkg_verify(pkg_t * pkg);

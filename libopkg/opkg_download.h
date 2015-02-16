@@ -36,6 +36,9 @@ int opkg_download_pkg(pkg_t * pkg);
 int opkg_download_pkg_to_dir(pkg_t * pkg, const char *dir);
 char *pkg_download_signature(pkg_t * pkg);
 
+int opkg_download_solv(Solvable *solv);
+int url_has_remote_protocol(const char *url);
+
 /*
  * Downloads file from url, installs in package database, return package name.
  */

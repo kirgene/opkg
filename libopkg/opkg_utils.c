@@ -18,6 +18,7 @@
 
 #include "config.h"
 
+#include <stdio.h>
 #include <ctype.h>
 #include <sys/statvfs.h>
 #include <string.h>
@@ -82,4 +83,24 @@ int line_is_blank(const char *line)
 int str_starts_with(const char *str, const char *prefix)
 {
     return (strncmp(str, prefix, strlen(prefix)) == 0);
+}
+
+int yesno(const char *str)
+{
+	char inbuf[128], *ip;
+
+	for (;;)
+	{
+		printf("%s", str);
+		fflush(stdout);
+		*inbuf = 0;
+		if (!(ip = fgets(inbuf, sizeof(inbuf), stdin)))
+			return 0;
+		while (*ip == ' ' || *ip == '\t')
+			ip++;
+		if (*ip == 'q')
+			return 0;
+		if (*ip == 'y' || *ip == 'n')
+			return *ip == 'y' ? 1 : 0;
+	}
 }

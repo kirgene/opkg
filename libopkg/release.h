@@ -22,8 +22,8 @@ extern "C" {
 #endif
 
 #include <stdio.h>
-#include "pkg.h"
 #include "cksum_list.h"
+#include "pkg_src.h"
 
 struct release {
     char *name;

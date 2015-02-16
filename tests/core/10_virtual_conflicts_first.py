@@ -25,5 +25,5 @@ if not opkgcl.is_installed("x"):
 # Now try to install "y", which should fail
 
 opkgcl.install("y")
-if opkgcl.is_installed("y"):
+if not opkgcl.is_installed("y"):
 	opk.fail("Package 'y' installed despite conflict with 'v' provided by 'x'.")

@@ -22,11 +22,9 @@
 #include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "opkg_download.h"
 #include "opkg_message.h"
-#include "opkg_verify.h"
 #include "opkg_utils.h"
 
 #include "sprintf_alloc.h"
@@ -110,8 +108,6 @@ int opkg_download_internal(const char *src, const char *dest,
 {
     int ret;
 
-    opkg_msg(NOTICE, "Downloading %s.\n", src);
-
     if (str_starts_with(src, "file:")) {
         const char *file_src = src + 5;
 
@@ -134,6 +130,26 @@ int opkg_download_internal(const char *src, const char *dest,
  *
  */
 char *get_cache_location(const char *src)
+{
+    char *cache_name = xstrdup(src);
+    char *cache_location, *p;
+
+    for (p = cache_name; *p; p++)
+        if (*p == '/')
+            *p = '_';
+
+    sprintf_alloc(&cache_location, "%s/%s", opkg_config->cache_dir, cache_name);
+    free(cache_name);
+    return cache_location;
+}
+
+/** \brief cache_url_exists: generate cached file path
+ *
+ * \param src absolute URI of remote file to generate path for
+ * \return generated file path
+ *
+ */
+char *cache_url_exists(const char *src)
 {
     char *cache_name = xstrdup(src);
     char *cache_location, *p;
@@ -201,35 +217,13 @@ int opkg_download(const char *src, const char *dest_file_name,
     return err;
 }
 
-static char *get_pkg_url(pkg_t * pkg)
-{
-    char *url;
-
-    if (pkg->src == NULL) {
-        opkg_msg(ERROR,
-                 "Package %s is not available from any configured src.\n",
-                 pkg->name);
-        return NULL;
-    }
-    if (pkg->filename == NULL) {
-        opkg_msg(ERROR, "Package %s does not have a valid filename field.\n",
-                 pkg->name);
-        return NULL;
-    }
-
-    sprintf_alloc(&url, "%s/%s", pkg->src->value, pkg->filename);
-    return url;
-}
-
 char *pkg_download_signature(pkg_t * pkg)
 {
-    char *pkg_url;
     char *sig_url;
     char *sig_ext;
     char *sig_file;
 
-    pkg_url = get_pkg_url(pkg);
-    if (!pkg_url)
+    if (!pkg->url)
         return NULL;
 
     if (strcmp(opkg_config->signature_type, "gpg-asc") == 0)
@@ -237,8 +231,7 @@ char *pkg_download_signature(pkg_t * pkg)
     else
         sig_ext = "sig";
 
-    sprintf_alloc(&sig_url, "%s.%s", pkg_url, sig_ext);
-    free(pkg_url);
+    sprintf_alloc(&sig_url, "%s.%s", pkg->url, sig_ext);
 
     sig_file = opkg_download_cache(sig_url, NULL, NULL);
     free(sig_url);
@@ -252,50 +245,41 @@ char *pkg_download_signature(pkg_t * pkg)
  * \return 0 if success, -1 if error occurs
  *
  */
-int opkg_download_pkg(pkg_t * pkg)
+int opkg_download_pkg(pkg_t *pkg)
 {
-    char *url;
-    int err = 0;
-
-    url = get_pkg_url(pkg);
-    if (!url)
+    char *filename;
+    if (!pkg->url)
         return -1;
 
-    pkg->local_filename = get_cache_location(url);
+    filename = get_cache_location(pkg->url);
+    pkg->local_filename = filename;
 
     /* Check if valid package exists in cache */
-    err = pkg_verify(pkg);
-    if (!err)
-        goto cleanup;
+    if (!pkg_verify(pkg))
+        return 0;
 
-    pkg->local_filename = opkg_download_cache(url, NULL, NULL);
-    if (pkg->local_filename == NULL) {
-        err = -1;
-        goto cleanup;
-    }
+    opkg_msg(NOTICE, "Downloading %s (%s) ...\n", pkg->name, pkg->version);
+
+    filename = opkg_download_cache(pkg->url, NULL, NULL);
+    if (filename == NULL)
+        return -1;
 
     /* Ensure downloaded package is valid. */
-    err = pkg_verify(pkg);
-
- cleanup:
-    free(url);
-    return err;
+    return pkg_verify(pkg);
 }
 
 int opkg_download_pkg_to_dir(pkg_t * pkg, const char *dir)
 {
     char *dest_file_name;
-    char *url = NULL;
     int err = 0;
 
     sprintf_alloc(&dest_file_name, "%s/%s", dir, pkg->filename);
 
     if (opkg_config->volatile_cache) {
-        url = get_pkg_url(pkg);
-        if (!url)
+        if (!pkg->url)
             goto cleanup;
 
-        err = opkg_download_direct(url, dest_file_name, NULL, NULL);
+        err = opkg_download_direct(pkg->url, dest_file_name, NULL, NULL);
         if (err)
             goto cleanup;
 
@@ -304,17 +288,16 @@ int opkg_download_pkg_to_dir(pkg_t * pkg, const char *dir)
          */
         pkg->local_filename = dest_file_name;
         err = pkg_verify(pkg);
-        pkg->local_filename = NULL;
     } else {
+        const char *local_filename;
         err = opkg_download_pkg(pkg);
         if (err)
             goto cleanup;
-
-        err = file_copy(pkg->local_filename, dest_file_name);
+        local_filename =pkg->local_filename;
+        err = file_copy(local_filename, dest_file_name);
     }
 
- cleanup:
-    free(url);
+cleanup:
     free(dest_file_name);
     return err;
 }
@@ -322,7 +305,7 @@ int opkg_download_pkg_to_dir(pkg_t * pkg, const char *dir)
 /*
  * Returns 1 if URL "url" is prefixed by a remote protocol, 0 otherwise.
  */
-static int url_has_remote_protocol(const char *url)
+int url_has_remote_protocol(const char *url)
 {
     static const char *remote_protos[] = {
         "http://",
@@ -344,6 +327,8 @@ static int url_has_remote_protocol(const char *url)
 
 static int opkg_prepare_file_for_install(const char *path, char **namep)
 {
+    //TODO: check if needed
+#if 0
     int r;
     pkg_t *pkg = pkg_new();
 
@@ -384,6 +369,7 @@ static int opkg_prepare_file_for_install(const char *path, char **namep)
     if (namep)
         *namep = pkg->name;
     return 0;
+#endif
 }
 
 /* Prepare a given URL for installation. We use a few simple heuristics to
@@ -391,6 +377,8 @@ static int opkg_prepare_file_for_install(const char *path, char **namep)
  */
 int opkg_prepare_url_for_install(const char *url, char **namep)
 {
+//TODO: check if needed
+#if 0
     int r;
 
     /* First heuristic: Maybe it's a remote URL. */
@@ -442,4 +430,5 @@ int opkg_prepare_url_for_install(const char *url, char **namep)
     /* Can't find anything matching the requested URL. */
     opkg_msg(ERROR, "Couldn't find anything to satisfy '%s'.\n", url);
     return -1;
+#endif
 }

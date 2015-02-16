@@ -27,8 +27,6 @@ extern "C" {
 #endif
 
 int opkg_remove_pkg(pkg_t * pkg);
-int pkg_has_installed_dependents(pkg_t * pkg,
-                                 abstract_pkg_t *** pdependents);
 void remove_data_files_and_list(pkg_t * pkg);
 void remove_maintainer_scripts(pkg_t * pkg);
 

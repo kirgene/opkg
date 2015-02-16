@@ -29,7 +29,9 @@
 #include "file_util.h"
 #include "sprintf_alloc.h"
 #include "xfuncs.h"
+#include "pkg_hash.h"
 
+#if 0
 /*
  * Returns number of the number of packages depending on the packages provided by this package.
  * Every package implicitly provides itself.
@@ -87,85 +89,9 @@ int pkg_has_installed_dependents(pkg_t * pkg, abstract_pkg_t *** pdependents)
     }
     return n_installed_dependents;
 }
+#endif
 
-static int opkg_remove_dependent_pkgs(pkg_t * pkg, abstract_pkg_t ** dependents)
-{
-    unsigned int i;
-    unsigned int a;
-    int count;
-    pkg_vec_t *dependent_pkgs;
-    abstract_pkg_t *ab_pkg;
-
-    ab_pkg = pkg->parent;
-    if (ab_pkg == NULL) {
-        opkg_msg(ERROR, "Internal error: pkg %s isn't in hash table\n",
-                 pkg->name);
-        return 0;
-    }
-
-    if (dependents == NULL)
-        return 0;
-
-    // here i am using the dependencies_checked
-    if (ab_pkg->dependencies_checked == 2)      // variable to make out whether this package
-        return 0;               // has already been encountered in the process
-    // of marking packages for removal - Karthik
-    ab_pkg->dependencies_checked = 2;
-
-    count = 1;
-    dependent_pkgs = pkg_vec_alloc();
-
-    for (i = 0; dependents[i] != NULL; i++) {
-        abstract_pkg_t *dep_ab_pkg = dependents[i];
-
-        if (dep_ab_pkg->dependencies_checked == 2) {
-            continue;
-        }
-        if (dep_ab_pkg->state_status == SS_INSTALLED) {
-            for (a = 0; a < dep_ab_pkg->pkgs->len; a++) {
-                pkg_t *dep_pkg = dep_ab_pkg->pkgs->pkgs[a];
-                if (dep_pkg->state_status == SS_INSTALLED) {
-                    pkg_vec_insert(dependent_pkgs, dep_pkg);
-                    count++;
-                }
-            }
-        }
-        /* 1 - to keep track of visited ab_pkgs when checking for possiblility
-         * of a broken removal of pkgs.
-         * 2 - to keep track of pkgs whose deps have been checked alrdy  -
-         * Karthik */
-    }
-
-    if (count == 1) {
-        pkg_vec_free(dependent_pkgs);
-        return 0;
-    }
-
-    int err = 0;
-    for (i = 0; i < dependent_pkgs->len; i++) {
-        err = opkg_remove_pkg(dependent_pkgs->pkgs[i]);
-        if (err)
-            break;
-    }
-    pkg_vec_free(dependent_pkgs);
-    return err;
-}
-
-static void print_dependents_warning(pkg_t * pkg, abstract_pkg_t ** dependents)
-{
-    abstract_pkg_t *dep_ab_pkg;
-    opkg_msg(ERROR, "Package %s is depended upon by packages:\n", pkg->name);
-    while ((dep_ab_pkg = *dependents++) != NULL) {
-        if (dep_ab_pkg->state_status == SS_INSTALLED)
-            opkg_msg(ERROR, "\t%s\n", dep_ab_pkg->name);
-    }
-    opkg_msg(ERROR, "These might cease to work if package %s is removed.\n\n",
-             pkg->name);
-    opkg_msg(ERROR, "Force removal of this package with --force-depends.\n");
-    opkg_msg(ERROR, "Force removal of this package and its dependents\n");
-    opkg_msg(ERROR, "with --force-removal-of-dependent-packages.\n");
-}
-
+#if 0
 /*
  * Find and remove packages that were autoinstalled and are orphaned
  * by the removal of pkg.
@@ -228,6 +154,7 @@ static int remove_autoinstalled(pkg_t * pkg)
 
     return err;
 }
+#endif
 
 int opkg_remove_pkg(pkg_t * pkg)
 {
@@ -255,54 +182,8 @@ int opkg_remove_pkg(pkg_t * pkg)
         }
     }
 
-    if (pkg->parent == NULL)
-        return 0;
-
-    /* While remove pkg with '--force-removal-of-dependent-packages',
-     * pkg may be added to remove list multiple times, add status
-     * check to make sure pkg only be removed once. */
-    if (opkg_config->force_removal_of_dependent_packages
-        && pkg->state_flag & SF_FILELIST_CHANGED
-        && pkg->state_status == SS_NOT_INSTALLED)
-        return 0;
-
-    /* only attempt to remove dependent installed packages if
-     * force_depends is not specified or the package is being
-     * replaced.
-     */
-    if (!opkg_config->force_depends && !(pkg->state_flag & SF_REPLACE)) {
-        abstract_pkg_t **dependents;
-        int has_installed_dependents = pkg_has_installed_dependents(pkg,
-                &dependents);
-
-        if (has_installed_dependents) {
-            /*
-             * if this package is depended upon by others, then either we should
-             * not remove it or we should remove it and all of its dependents
-             */
-
-            if (!opkg_config->force_removal_of_dependent_packages) {
-                print_dependents_warning(pkg, dependents);
-                free(dependents);
-                return -1;
-            }
-
-            /* remove packages depending on this package - Karthik */
-            err = opkg_remove_dependent_pkgs(pkg, dependents);
-            if (err) {
-                free(dependents);
-                return err;
-            }
-        }
-        free(dependents);
-    }
-
-    opkg_msg(NOTICE, "Removing package %s from %s...\n", pkg->name,
-             pkg->dest->name);
-    pkg->state_flag |= SF_FILELIST_CHANGED;
-
+    pkg->state_flag |= SF_FILELIST_CHANGED | SF_CHANGED;
     pkg->state_want = SW_DEINSTALL;
-    opkg_state_changed++;
 
     r = pkg_run_script(pkg, "prerm", "remove");
     if (r != 0) {
@@ -328,15 +209,7 @@ int opkg_remove_pkg(pkg_t * pkg)
 
     remove_maintainer_scripts(pkg);
     pkg->state_status = SS_NOT_INSTALLED;
-
-    pkg->parent->state_status = SS_NOT_INSTALLED;
-
-    /* remove autoinstalled packages that are orphaned by the removal of this one */
-    if (opkg_config->autoremove) {
-        r = remove_autoinstalled(pkg);
-        if (r != 0)
-            err = -1;
-    }
+    pkg_write_status(pkg);
     return err;
 }
 
@@ -349,7 +222,7 @@ void remove_data_files_and_list(pkg_t * pkg)
     conffile_t *conffile;
     int removed_a_dir;
     pkg_t *owner;
-    int rootdirlen = 0;
+    size_t rootdirlen = 0;
     int r;
 
     installed_files = pkg_get_installed_files(pkg);
@@ -451,7 +324,8 @@ void remove_maintainer_scripts(pkg_t * pkg)
     if (opkg_config->noaction)
         return;
 
-    sprintf_alloc(&globpattern, "%s/%s.*", pkg->dest->info_dir, pkg->name);
+    sprintf_alloc(&globpattern, "%s/%s.*", pkg->dest->info_dir,
+            pkg->name);
 
     err = glob(globpattern, 0, NULL, &globbuf);
     free(globpattern);

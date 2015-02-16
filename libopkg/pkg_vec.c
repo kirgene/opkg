@@ -47,6 +47,8 @@ void pkg_vec_free(pkg_vec_t * vec)
     free(vec);
 }
 
+#if 0
+
 /*
  * assumption: all names in a vector are identical
  * assumption: all version strings are trimmed,
@@ -102,12 +104,25 @@ void pkg_vec_insert_merge(pkg_vec_t * vec, pkg_t * pkg, int set_status)
     vec->pkgs[i] = pkg;
 }
 
+#endif
+
 void pkg_vec_insert(pkg_vec_t * vec, const pkg_t * pkg)
 {
     vec->pkgs = xrealloc(vec->pkgs, (vec->len + 1) * sizeof(pkg_t *));
     vec->pkgs[vec->len] = (pkg_t *) pkg;
     vec->len++;
 }
+
+pkg_t* pkg_vec_get_pkg_by_solvable(pkg_vec_t * vec, Solvable *solvable)
+{
+    unsigned int i;
+    for (i = 0; i < vec->len; i++)
+        if (vec->pkgs[i]->solvable == solvable)
+            return vec->pkgs[i];
+    return NULL;
+}
+
+#if 0
 
 int pkg_vec_contains(pkg_vec_t * vec, pkg_t * apkg)
 {
@@ -210,3 +225,5 @@ int pkg_compare_names(const void *p1, const void *p2)
         return -1;
     return (strcmp(pkg1->name, pkg2->name));
 }
+
+#endif

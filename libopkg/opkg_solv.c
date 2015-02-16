@@ -1211,38 +1211,73 @@ void prepare_job(Queue *job) {
         }
 }
 
-void list_packages(Queue *selection)
+void get_packages_from_selection(Queue *selection, Queue *packages)
 {
-    Queue packages;
-    pkg_t pkg;
     int i, j;
 
-    queue_init(&packages);
-    selection_solvables(opkg_solv_pool, selection, &packages);
+    queue_empty(packages);
+    selection_solvables(opkg_solv_pool, selection, packages);
 
     /* remove duplicates from installed repo */
-    for (i = 0; i < packages.count - 1; i++) {
-        for (j = i + 1; j < packages.count; j++) {
-            Solvable *s1 = pool_id2solvable(opkg_solv_pool, packages.elements[i]);
-            Solvable *s2 = pool_id2solvable(opkg_solv_pool, packages.elements[j]);
+    for (i = 0; i < packages->count - 1; i++) {
+        for (j = i + 1; j < packages->count; j++) {
+            Solvable *s1 = pool_id2solvable(opkg_solv_pool, packages->elements[i]);
+            Solvable *s2 = pool_id2solvable(opkg_solv_pool, packages->elements[j]);
             if (solvable_identical(s1, s2)) {
                 if (s1->repo != opkg_solv_pool->installed) {
-                    queue_delete(&packages, j);
+                    queue_delete(packages, j);
                     j--;
                 } else {
-                    queue_delete(&packages, i);
+                    queue_delete(packages, i);
                     i--;
                 }
             }
         }
     }
 
-    solv_sort(packages.elements, packages.count, sizeof(Id), cmp_pkgs, opkg_solv_pool);
+    solv_sort(packages->elements, packages->count, sizeof(Id), cmp_pkgs, opkg_solv_pool);
+}
+
+void list_packages(Queue *selection)
+{
+    Queue packages;
+    pkg_t *pkg;
+    int i;
+
+    queue_init(&packages);
+    get_packages_from_selection(selection, &packages);
     for (i = 0; i < packages.count; i++) {
         Solvable *s = pool_id2solvable(opkg_solv_pool, packages.elements[i]);
-        pkg_init(&pkg, s);
-        print_pkg(&pkg);
-        pkg_deinit(&pkg);
+        pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+        print_pkg(pkg);
+    }
+    queue_free(&packages);
+}
+
+void list_files(Queue *selection)
+{
+    Queue packages;
+    pkg_t *pkg;
+    int i;
+    str_list_t *files;
+    str_list_elt_t *iter;
+
+    queue_init(&packages);
+    get_packages_from_selection(selection, &packages);
+
+    for (i = 0; i < packages.count; i++) {
+        Solvable *s = pool_id2solvable(opkg_solv_pool, packages.elements[i]);
+        pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+
+        files = pkg_get_installed_files(pkg);
+
+        printf("Package %s (%s) is installed on %s and has the following files:\n",
+                pkg->name, pkg->version, pkg->dest->name);
+
+        for (iter = str_list_first(files); iter; iter = str_list_next(files, iter))
+            printf("%s\n", (char *)iter->data);
+
+        pkg_free_installed_files(pkg);
     }
     queue_free(&packages);
 }
@@ -1303,6 +1338,27 @@ void set_installed_packages_flag(Queue *selection, opkg_solv_mode_t mode)
     queue_free(&packages);
 }
 
+void prepare_reinstall(Queue *job)
+{
+    Queue pkgs;
+    Solvable *si, *s;
+    int i;
+    Id pi;
+    if (opkg_solv_pool->installed) {
+        queue_init(&pkgs);
+        selection_solvables(opkg_solv_pool, job, &pkgs);
+        for (i = 0; i < pkgs.count; i++) {
+            s = pool_id2solvable(opkg_solv_pool, pkgs.elements[i]);
+            FOR_REPO_SOLVABLES(opkg_solv_pool->installed, pi, si) {
+                    if (solvable_identical(s, si)) {
+                        queue_push2(job, SOLVER_SOLVABLE | SOLVER_ERASE, pi);
+                    }
+                }
+        }
+        queue_free(&pkgs);
+    }
+}
+
 int opkg_solv_process(str_list_t *pkg_names, opkg_solv_mode_t mode)
 {
     int i;
@@ -1329,6 +1385,10 @@ int opkg_solv_process(str_list_t *pkg_names, opkg_solv_mode_t mode)
         list_packages(&job);
         return 0;
     }
+    if (mode == MODE_FILES) {
+        list_files(&job);
+        return 0;
+    }
     if ((mode >= MODE_FLAG_HOLD) && (mode <= MODE_FLAG_UNPACKED)) {
         set_installed_packages_flag(&job, mode);
         write_all_status_files();
@@ -1349,6 +1409,7 @@ int opkg_solv_process(str_list_t *pkg_names, opkg_solv_mode_t mode)
     }
 
     solv = solver_create(opkg_solv_pool);
+    solver_set_flag(solv, SOLVER_FLAG_ALLOW_UNINSTALL, 1);
 
     if (!opkg_config->no_install_recommends) {
         prepare_recommends();
@@ -1358,26 +1419,17 @@ int opkg_solv_process(str_list_t *pkg_names, opkg_solv_mode_t mode)
 
     count = job.count;
     for (i = 0; i < count; i += 2) {
-        job.elements[i] |= opmode | SOLVER_FORCEBEST;
+        job.elements[i] |= opmode;
         if (opmode & SOLVER_UPDATE && pool_isemptyupdatejob(opkg_solv_pool, job.elements[i], job.elements[i + 1]))
             job.elements[i] ^= SOLVER_UPDATE ^ SOLVER_INSTALL;
         if (opkg_config->autoremove)
             job.elements[i] |= SOLVER_CLEANDEPS;
-        if (opmode & SOLVER_INSTALL && opkg_config->force_reinstall) {
-            queue_push2(&job, job.elements[i] | SOLVER_ERASE, job.elements[i + 1]);
-            #if 0
-            Id p, pp;
-            Pool *pool = opkg_solv_pool;
-            Solvable *s = pool->solvables + job.elements[i + 1];
-            FOR_PROVIDES(p, pp, s->name) {
-                Solvable *si = pool->solvables + p;
-                if (si->repo != pool->installed || !solvable_identical(s, si))
-                    continue;
-                queue_push2(&job, job.elements[i] | SOLVER_ERASE, p);
-            }
-            #endif
-        }
+        if (!opkg_config->force_reinstall)
+            job.elements[i] |= SOLVER_FORCEBEST;
     }
+
+    if (opmode & SOLVER_INSTALL && opkg_config->force_reinstall)
+        prepare_reinstall(&job);
 
     prepare_job(&job);
 

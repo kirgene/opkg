@@ -51,6 +51,7 @@ enum {
     ARGS_OPT_ADD_DEST,
     ARGS_OPT_ADD_EXCLUDE,
     ARGS_OPT_NOACTION,
+    ARGS_OPT_CONFIRM,
     ARGS_OPT_DOWNLOAD_ONLY,
     ARGS_OPT_NODEPS,
     ARGS_OPT_AUTOREMOVE,
@@ -96,6 +97,7 @@ static struct option long_options[] = {
     {"prefer-arch-to-version", 0, 0, ARGS_OPT_PREFER_ARCH_TO_VERSION},
     {"prefer-arch-to-version", 0, 0, ARGS_OPT_PREFER_ARCH_TO_VERSION},
     {"noaction", 0, 0, ARGS_OPT_NOACTION},
+    {"confirm", 0, 0, ARGS_OPT_CONFIRM},
     {"download-only", 0, 0, ARGS_OPT_DOWNLOAD_ONLY},
     {"nodeps", 0, 0, ARGS_OPT_NODEPS},
     {"no-install-recommends", 0, 0, ARGS_OPT_NO_INSTALL_RECOMMENDS},
@@ -210,6 +212,9 @@ static int args_parse(int argc, char *argv[])
         case ARGS_OPT_NOACTION:
             opkg_config->noaction = 1;
             break;
+        case ARGS_OPT_CONFIRM:
+            opkg_config->confirm = 1;
+            break;
         case ARGS_OPT_DOWNLOAD_ONLY:
             opkg_config->download_only = 1;
             break;
@@ -300,8 +305,7 @@ static void usage()
     printf("\t--prefer-arch-to-version        Use the architecture priority package rather\n");
     printf("\t                                than the higher version one if more\n");
     printf("\t                                than one candidate is found.\n");
-    printf("\t--combine                       Combine upgrade and install operations, this\n");
-    printf("\t                                may be needed to resolve dependency issues.\n");
+    printf("\t--confirm                       Ask for confirmation\n");
 
     printf("\nForce Options:\n");
     printf("\t--force-depends                 Install/remove despite failed dependencies\n");
@@ -382,18 +386,18 @@ int main(int argc, char *argv[])
         usage();
     }
 
-    opkg_config->pfm = cmd->pfm;
-
     if (opkg_conf_load())
         goto err0;
 
+    opkg_solv_init();
+
     if (!nocheckfordirorfile) {
         if (!noreadfeedsfile) {
-            if (pkg_hash_load_feeds())
+            if (opkg_solv_load_feeds())
                 goto err1;
         }
 
-        if (pkg_hash_load_status_files())
+        if (opkg_solv_load_status_files())
             goto err1;
     }
 

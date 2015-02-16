@@ -20,6 +20,7 @@
 #define OPKG_CONF_H
 
 #include <stdarg.h>
+#include <solv/solver.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -71,8 +72,6 @@ typedef struct opkg_conf {
     char *info_dir;
     char *status_file;
 
-    unsigned int pfm;       /* package field mask */
-
     /* For libopkg users to capture messages. */
     void (*opkg_vmessage) (int, const char *fmt, va_list ap);
 
@@ -106,6 +105,7 @@ typedef struct opkg_conf {
     int volatile_cache;
     int combine;
     int cache_local_files;
+	int confirm;
 
     /* ssl options: used only when opkg is configured with '--enable-curl',
      * otherwise always NULL or 0.
@@ -178,7 +178,6 @@ int opkg_conf_init(void);
 int opkg_conf_load(void);
 void opkg_conf_deinit(void);
 
-int opkg_conf_write_status_files(void);
 char *root_filename_alloc(char *filename);
 
 int opkg_conf_get_option(char *option, void *value);

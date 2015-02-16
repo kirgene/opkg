@@ -84,6 +84,7 @@ static opkg_option_t options[] = {
     {"overwrite_no_owner", OPKG_OPT_TYPE_BOOL, &_conf.overwrite_no_owner},
     {"combine", OPKG_OPT_TYPE_BOOL, &_conf.combine},
     {"cache_local_files", OPKG_OPT_TYPE_BOOL, &_conf.cache_local_files},
+    {"confirm", OPKG_OPT_TYPE_BOOL, &_conf.confirm},
 #if defined(HAVE_OPENSSL)
     {"signature_ca_file", OPKG_OPT_TYPE_STRING, &_conf.signature_ca_file},
     {"signature_ca_path", OPKG_OPT_TYPE_STRING, &_conf.signature_ca_path},
@@ -434,69 +435,6 @@ static int opkg_conf_parse_file(const char *filename,
     return err;
 }
 
-int opkg_conf_write_status_files(void)
-{
-    pkg_dest_list_elt_t *iter;
-    pkg_dest_t *dest;
-    pkg_vec_t *all;
-    pkg_t *pkg;
-    unsigned int i;
-    int ret = 0;
-    int r;
-
-    if (opkg_config->noaction)
-        return 0;
-
-    list_for_each_entry(iter, &opkg_config->pkg_dest_list.head, node) {
-        dest = (pkg_dest_t *) iter->data;
-
-        dest->status_fp = fopen(dest->status_file_name, "w");
-        if (dest->status_fp == NULL && errno != EROFS) {
-            opkg_perror(ERROR, "Can't open status file %s",
-                        dest->status_file_name);
-            ret = -1;
-        }
-    }
-
-    all = pkg_vec_alloc();
-    pkg_hash_fetch_available(all);
-
-    for (i = 0; i < all->len; i++) {
-        pkg = all->pkgs[i];
-        /* We don't need most uninstalled packages in the status file */
-        int is_not_wanted = (pkg->state_status == SS_NOT_INSTALLED
-                && (pkg->state_want == SW_UNKNOWN
-                    || (pkg->state_want == SW_DEINSTALL
-                        && !(pkg->state_flag & SF_HOLD))
-                    || pkg->state_want == SW_PURGE));
-        if (is_not_wanted) {
-            continue;
-        }
-        if (pkg->dest == NULL) {
-            opkg_msg(ERROR, "Internal error: package %s has a NULL dest\n",
-                     pkg->name);
-            continue;
-        }
-        if (pkg->dest->status_fp)
-            pkg_print_status(pkg, pkg->dest->status_fp);
-    }
-
-    pkg_vec_free(all);
-
-    list_for_each_entry(iter, &opkg_config->pkg_dest_list.head, node) {
-        dest = (pkg_dest_t *) iter->data;
-        if (dest->status_fp) {
-            r = fclose(dest->status_fp);
-            if (r == EOF) {
-                opkg_perror(ERROR, "Couldn't close %s", dest->status_file_name);
-                ret = -1;
-            }
-        }
-    }
-
-    return ret;
-}
-
 char *root_filename_alloc(char *filename)
 {
     char *root_filename;
@@ -696,7 +634,6 @@ int opkg_conf_load(void)
         goto err3;
     }
 
-    pkg_hash_init();
     hash_table_init("file-hash", &opkg_config->file_hash,
                     OPKG_CONF_DEFAULT_HASH_LEN);
     hash_table_init("obs-file-hash", &opkg_config->obs_file_hash,
@@ -767,7 +704,6 @@ int opkg_conf_load(void)
  err4:
     free(opkg_config->lists_dir);
 
-    pkg_hash_deinit();
     hash_table_deinit(&opkg_config->file_hash);
     hash_table_deinit(&opkg_config->obs_file_hash);
 
@@ -827,7 +763,6 @@ void opkg_conf_deinit(void)
         hash_print_stats(&opkg_config->obs_file_hash);
     }
 
-    pkg_hash_deinit();
     hash_table_deinit(&opkg_config->file_hash);
     hash_table_deinit(&opkg_config->obs_file_hash);
 

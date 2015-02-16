@@ -51,6 +51,9 @@ nv_pair_list_elt_t *nv_pair_list_next(nv_pair_list_t * list,
                                       nv_pair_list_elt_t * node);
 nv_pair_list_elt_t *nv_pair_list_last(nv_pair_list_t * list);
 
+typedef int (*nv_pair_list_compare_t) (const char *, const char *);
+void nv_pair_list_sort(nv_pair_list_t * list, nv_pair_list_compare_t compare);
+
 #ifdef __cplusplus
 }
 #endif

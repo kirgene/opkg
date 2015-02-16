@@ -38,12 +38,15 @@ class Opk:
 		if os.path.exists("data.tar.gz"):
 			os.unlink("data.tar.gz")
 
+		with open("debian-binary", "w") as f:
+		    f.write("2.0\n")
+
 		f = open("control", "w")
 		for k in self.control.keys():
 			f.write("{}: {}\n".format(k, self.control[k]))
 		f.close()
 
-		tar = tarfile.open("control.tar.gz", "w:gz")
+		tar = tarfile.open("control.tar.gz", "w|gz")
 		tar.add("control")
 		tar.close()
 
@@ -55,14 +58,16 @@ class Opk:
 
 
 		if tar_not_ar:
-			tar = tarfile.open(filename, "w:gz")
+			tar = tarfile.open(filename, "w|gz")
+			tar.add("debian-binary")
 			tar.add("control.tar.gz")
 			tar.add("data.tar.gz")
 			tar.close()
 		else:
-			os.system("ar q {} control.tar.gz data.tar.gz \
-					2>/dev/null".format(filename))
+		        os.system("ar q {} debian-binary control.tar.gz data.tar.gz \
+				        2>/dev/null".format(filename))
 
+		os.unlink("debian-binary")
 		os.unlink("control")
 		os.unlink("control.tar.gz")
 		os.unlink("data.tar.gz")
