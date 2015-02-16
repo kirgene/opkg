@@ -1,9 +1,9 @@
 /* vi: set expandtab sw=4 sts=4: */
 /* opkg_cmd.c - the opkg package management system
 
-   Carl D. Worth
+   Yevhen Kyriukha
 
-   Copyright (C) 2001 University of Southern California
+   Copyright (C) 2015
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
