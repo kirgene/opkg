@@ -660,7 +660,6 @@ int process_job(Solver *solver, Queue *job)
                     Id dep, source, target;
                     Id probr = solver_findproblemrule(solver, problem);
                     SolverRuleinfo type = solver_ruleinfo(solver, probr, &source, &target, &dep);
-                    printf("TYPE: %d\n", type);
                 }
                 solver_printprobleminfo(solver, problem);
                 printf("\n");
