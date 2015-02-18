@@ -4,7 +4,7 @@ import os, subprocess
 import cfg
 
 def opkgcl(opkg_args):
-	cmd = "{} -o {} {}".format(cfg.opkgcl, cfg.offline_root, opkg_args)
+	cmd = "{} --batch -o {} {}".format(cfg.opkgcl, cfg.offline_root, opkg_args)
 	#print('============================================================')
 	print(cmd)
 	p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,

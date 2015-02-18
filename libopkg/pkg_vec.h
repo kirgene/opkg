@@ -38,7 +38,7 @@ void pkg_vec_free(pkg_vec_t * vec);
 
 void pkg_vec_insert_merge(pkg_vec_t * vec, pkg_t * pkg, int set_status);
 void pkg_vec_insert(pkg_vec_t * vec, const pkg_t * pkg);
-pkg_t* pkg_vec_get_pkg_by_solvable(pkg_vec_t * vec, Solvable *solvable);
+pkg_t* pkg_vec_get_pkg_by_id(pkg_vec_t *vec, Id p);
 int pkg_vec_contains(pkg_vec_t * vec, pkg_t * apkg);
 
 typedef int (*compare_fcn_t) (const void *, const void *);

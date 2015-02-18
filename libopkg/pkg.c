@@ -77,6 +77,8 @@ static const enum_map_t pkg_state_status_map[] = {
     {SS_REMOVAL_FAILED, "removal-failed"}
 };
 
+Pool *pkg_pool = NULL;
+
 void pkg_init_from_solvable(pkg_t *pkg, Solvable* s);
 char* get_solv_dep(pkg_t *pkg, Offset offset);
 
@@ -546,16 +548,16 @@ void pkg_init_from_solvable(pkg_t *pkg, Solvable* s)
 {
     const char *sstr;
     Dataiterator di;
-    Pool *pool;
     int chksumtype;
     const char *chksum;
 
-    pool = s->repo->pool;
+    if (!pkg_pool)
+        pkg_pool = s->repo->pool;
 
-    pkg->solvable = s;
+    pkg->id = s - pkg_pool->solvables;
     pkg->name = xstrdup(solvable_lookup_str(s, SOLVABLE_NAME));
     pkg->version = xstrdup(solvable_lookup_str(s, SOLVABLE_EVR));
-    pkg->url = xstrdup(solvable_lookup_location(pkg->solvable, NULL));
+    pkg->url = xstrdup(solvable_lookup_location(s, NULL));
     pkg->architecture = xstrdup(solvable_lookup_str(s, SOLVABLE_ARCH));
     pkg->description = xstrdup(solvable_lookup_str(s, SOLVABLE_DESCRIPTION));
     //      pkg->filename = strdup(solvable_lookup_str(s, SOLVABLE_));
@@ -565,30 +567,30 @@ void pkg_init_from_solvable(pkg_t *pkg, Solvable* s)
 
     /* get md5 sum */
     chksumtype = REPOKEY_TYPE_MD5;
-    chksum = solvable_lookup_checksum(pkg->solvable, SOLVABLE_CHECKSUM, &chksumtype);
+    chksum = solvable_lookup_checksum(s, SOLVABLE_CHECKSUM, &chksumtype);
     if (chksumtype)
         pkg->md5sum = xstrdup(chksum);
 
     /* get sha256 sum */
     chksumtype = REPOKEY_TYPE_SHA256;
-    chksum = solvable_lookup_checksum(pkg->solvable, SOLVABLE_CHECKSUM, &chksumtype);
+    chksum = solvable_lookup_checksum(s, SOLVABLE_CHECKSUM, &chksumtype);
     if (chksumtype)
         pkg->sha256sum = xstrdup(chksum);
 
     /* get status */
-    sstr = solvable_lookup_str(pkg->solvable, SOLVABLE_INSTALLSTATUS);
+    sstr = solvable_lookup_str(s, SOLVABLE_INSTALLSTATUS);
     if (sstr)
         pkg_parse_status_str(pkg, sstr);
 
     /* Auto-Installed flag */
-    pkg->auto_installed = solvable_lookup_num(pkg->solvable, SOLVABLE_USERINSTALLED, -1);
+    pkg->auto_installed = solvable_lookup_num(s, SOLVABLE_USERINSTALLED, -1);
     if (pkg->auto_installed >= 0)
         pkg->auto_installed = !pkg->auto_installed;
 
     /* add the conffiles */
-    dataiterator_init(&di, pool, pkg->solvable->repo, pkg->solvable - pool->solvables, SOLVABLE_DEB_CONFFILES, 0, 0);
+    dataiterator_init(&di, pkg_pool, s->repo, s - pkg_pool->solvables, SOLVABLE_DEB_CONFFILES, 0, 0);
     while (dataiterator_step(&di)) {
-        const char* filename = pool_id2str(pool, di.kv.id);
+        const char* filename = pool_id2str(pkg_pool, di.kv.id);
         chksum = repodata_chk2str(di.data, REPOKEY_TYPE_MD5, di.kv.str);
         pkg_add_conffile(pkg, filename, chksum);
     }
@@ -600,8 +602,6 @@ void pkg_init_from_solvable(pkg_t *pkg, Solvable* s)
     pkg->suggests_str = get_solv_dep(pkg, s->suggests);
     pkg->conflicts_str = get_solv_dep(pkg, s->conflicts);
     pkg->replaces_str = get_solv_dep(pkg, s->obsoletes);
-
-    /* */
 }
 
 int pkg_restore_status(pkg_t *pkg, str_list_t *status_tmp)
@@ -640,18 +640,17 @@ char* get_solv_dep(pkg_t *pkg, Offset offset)
     int first = 1;
     const char *dep, *ver;
     int name_len;
-    Pool *pool;
     int is_provides;
     char *res = NULL;
-    dp = pkg->solvable->repo->idarraydata + offset;
-    pool = pkg->solvable->repo->pool;
-    is_provides = pkg->solvable->provides == offset;
+    Solvable *s = pool_id2solvable(pkg_pool, pkg->id);
+    dp = s->repo->idarraydata + offset;
+    is_provides = s->provides == offset;
     while ((d = *dp++) != 0) {
         if (is_provides && !*dp) {
             /* Don't get provides for package itself */
             break;
         }
-        dep = pool_dep2str(pool, d);
+        dep = pool_dep2str(pkg_pool, d);
         ver = strchr(dep, ' ');
         if (ver) {
             name_len = ver - dep;
@@ -1449,7 +1448,8 @@ int pkg_verify(pkg_t *pkg)
         return -1;
 
 	chksumtype = 0;
-	chksum = solvable_lookup_bin_checksum(pkg->solvable, SOLVABLE_CHECKSUM, &chksumtype);
+    Solvable *s = pool_id2solvable(pkg_pool, pkg->id);
+	chksum = solvable_lookup_bin_checksum(s, SOLVABLE_CHECKSUM, &chksumtype);
 	if (chksumtype && verify_checksum(pkg->local_filename, chksum, chksumtype))
 		goto fail;
 

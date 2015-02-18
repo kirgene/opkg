@@ -82,7 +82,7 @@ enum pkg_state_status {
 typedef enum pkg_state_status pkg_state_status_t;
 
 struct pkg {
-    Solvable *solvable;
+    Id id;
     unsigned long epoch;
     char *name;
     char *version;

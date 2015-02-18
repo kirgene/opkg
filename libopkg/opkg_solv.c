@@ -31,6 +31,7 @@
 #include <stdbool.h>
 #include <solv/poolarch.h>
 #include <dirent.h>
+#include <assert.h>
 
 #include "opkg_solv.h"
 #include "opkg_conf.h"
@@ -182,32 +183,41 @@ int opkg_solv_add_from_file(const char *file_name, pkg_src_t * src,
         return -1;
     }
 
-    if (is_status_file) {
-        repo_internalize(repo);
-    }
-
     /* remove duplicate solvables (used for transaction) from status file
      * using only the last solvable
      */
-    if (is_status_file)
+    if (is_status_file) {
+        repo_internalize(repo);
         FOR_REPO_SOLVABLES(repo, p, s)
-            FOR_REPO_SOLVABLES(repo, p2, s2) {
-                    if (s == s2)
-                        break;
-                    if (solvable_identical(s, s2)) {
-                        repo_free_solvable(repo, s2 - opkg_solv_pool->solvables, 1);
-                        dest->changed = 1;
+                FOR_REPO_SOLVABLES(repo, p2, s2) {
+                        if (s == s2)
+                            break;
+                        if (solvable_identical(s, s2)) {
+                            repo_free_solvable(repo, s2 - opkg_solv_pool->solvables, 1);
+                            dest->changed = 1;
+                        }
                     }
-                }
+    }
 
     FOR_REPO_SOLVABLES(repo, p, s) {
-            if (pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s))
+            if (pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p))
                 continue; /* Already processed */
-            if (is_status_file) {
-                pkg = pkg_new(s);
-                pkg->dest = dest;
-                pkg_vec_insert(opkg_solv_pkgs, pkg);
 
+            if (src)
+                solvable_set_str(s, SOLVABLE_MEDIADIR, src->value);
+        }
+
+    repo_internalize(repo);
+
+    FOR_REPO_SOLVABLES(repo, p, s) {
+            if (pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p))
+                continue; /* Already processed */
+
+            pkg = pkg_new(s);
+            pkg->dest = dest;
+            pkg_vec_insert(opkg_solv_pkgs, pkg);
+
+            if (is_status_file) {
                 int is_installed = pkg->state_status == SS_INSTALLED
                         || pkg->state_status == SS_UNPACKED;
                 if (!is_installed) {
@@ -215,9 +225,6 @@ int opkg_solv_add_from_file(const char *file_name, pkg_src_t * src,
                     //TODO: move UNPACKED packages into separate repo for later configuring ????
                 }
             }
-
-            if (src)
-                solvable_set_str(s, SOLVABLE_MEDIADIR, src->value);
 
             #if 0
             if (!opkg_config->no_install_recommends) {
@@ -232,9 +239,10 @@ int opkg_solv_add_from_file(const char *file_name, pkg_src_t * src,
             #endif
         }
 
-    repo_internalize(repo);
+    repo_internalize(repo); // CHECK IF NEEDED ???
 
     if (is_status_file) {
+        // Assume that status file parsed first
         pkg_info_preinstall_check(opkg_solv_pkgs);
     }
 
@@ -749,7 +757,6 @@ int process_job(Solver *solver, Queue *job)
     for (i = 0; i < newpkgs; i++)
     {
         p = checkq.elements[i];
-        s = pool_id2solvable(opkg_solv_pool, p);
         /*
            if (s->repo == commandlinerepo)
            {
@@ -773,15 +780,10 @@ int process_job(Solver *solver, Queue *job)
            exit(1);
            }
            */
-        pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
-        if (pkg && pkg->provided_by_hand)
+        pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
+        assert(pkg != NULL);
+        if (pkg->provided_by_hand)
             continue;
-        if (!pkg) {
-            pkg = pkg_new(s);
-            //pkg->dest = opkg_config->default_dest;
-            //TODO: pkg->src = src; ???
-            pkg_vec_insert(opkg_solv_pkgs, pkg);
-        }
 
         if (opkg_download_pkg(pkg)) {
             opkg_msg(ERROR, "Failed to download %s. "
@@ -810,13 +812,11 @@ int process_job(Solver *solver, Queue *job)
     mode = SOLVER_TRANSACTION_SHOW_OBSOLETES | SOLVER_TRANSACTION_OBSOLETE_IS_UPGRADE;
     for (i = 0; i < trans->steps.count; i++)
     {
-        Solvable *s2;
         pkg_t *pkg2;
         Id type;
 
         p = trans->steps.elements[i];
-        s = pool_id2solvable(opkg_solv_pool, p);
-        pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+        pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
 
         type = transaction_type(trans, p, mode);
      //   printf("TYPE: %p, %s\n", type, pool_solvid2str(opkg_solv_pool, p));
@@ -825,8 +825,7 @@ int process_job(Solver *solver, Queue *job)
             case SOLVER_TRANSACTION_DOWNGRADED:
             case SOLVER_TRANSACTION_UPGRADED:
             case SOLVER_TRANSACTION_REINSTALLED:
-                s2 = opkg_solv_pool->solvables + transaction_obs_pkg(trans, p);
-                pkg2 = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s2);
+                pkg2 = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, transaction_obs_pkg(trans, p));
                 pkg2->dest = pkg->dest;
                 print_pkg_trans(type, pkg2);
                 if (opkg_upgrade_pkg(pkg, pkg2)) {
@@ -871,7 +870,7 @@ int process_job(Solver *solver, Queue *job)
     /* configure old packages first */
     FOR_REPO_SOLVABLES(opkg_solv_pool->installed, p, s) {
             int exists = 0;
-            pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+            pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, p);
             if (pkg->state_want != SW_INSTALL || pkg->state_status != SS_UNPACKED)
                 continue;
             // Check if solvable exists in current transaction
@@ -924,7 +923,7 @@ int process_job(Solver *solver, Queue *job)
         } else {
             continue;
         }
-        pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+        pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
         if (pkg->state_status == SS_UNPACKED) {
             opkg_msg(NOTICE, "Configuring %s.\n", pkg->name);
             r = opkg_configure(pkg);
@@ -1012,7 +1011,7 @@ static int add_pkgs(Queue *job, str_list_t *pkg_names)
     for (i = 0; i < q.count; i++) {
         Solvable *s = pool_id2solvable(opkg_solv_pool, q.elements[i]);
         pkg_t *pkg;
-        pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+        pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, q.elements[i]);
         if (!pkg) {
             pkg = pkg_new(s);
             pkg_vec_insert(opkg_solv_pkgs, pkg);
@@ -1116,7 +1115,7 @@ int configure_old_pkgs()
 
     err = 0;
     FOR_REPO_SOLVABLES(opkg_solv_pool->installed, p, s) {
-            pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+            pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
             if (pkg->state_want != SW_INSTALL || pkg->state_status != SS_UNPACKED)
                 continue;
             opkg_msg(NOTICE, "Configuring %s.\n", pkg->name);
@@ -1200,7 +1199,7 @@ void prepare_job(Queue *job) {
         return;
 
     FOR_REPO_SOLVABLES(repo, p, s) {
-            pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+            pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
             if (!pkg)
                 continue;
 
@@ -1249,8 +1248,7 @@ void list_packages(Queue *selection)
     queue_init(&packages);
     get_packages_from_selection(selection, &packages);
     for (i = 0; i < packages.count; i++) {
-        Solvable *s = pool_id2solvable(opkg_solv_pool, packages.elements[i]);
-        pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+        pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, packages.elements[i]);
         print_pkg(pkg);
     }
     queue_free(&packages);
@@ -1268,8 +1266,7 @@ void list_files(Queue *selection)
     get_packages_from_selection(selection, &packages);
 
     for (i = 0; i < packages.count; i++) {
-        Solvable *s = pool_id2solvable(opkg_solv_pool, packages.elements[i]);
-        pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+        pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, packages.elements[i]);
 
         files = pkg_get_installed_files(pkg);
 
@@ -1324,7 +1321,7 @@ void set_installed_packages_flag(Queue *selection, opkg_solv_mode_t mode)
         Solvable *s = pool_id2solvable(opkg_solv_pool, packages.elements[i]);
         if (s->repo != opkg_solv_pool->installed)
             continue;
-        pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, s);
+        pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, packages.elements[i]);
         if (!pkg)
             continue;
 

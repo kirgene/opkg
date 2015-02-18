@@ -113,11 +113,11 @@ void pkg_vec_insert(pkg_vec_t * vec, const pkg_t * pkg)
     vec->len++;
 }
 
-pkg_t* pkg_vec_get_pkg_by_solvable(pkg_vec_t * vec, Solvable *solvable)
+pkg_t*pkg_vec_get_pkg_by_id(pkg_vec_t *vec, Id id)
 {
     unsigned int i;
     for (i = 0; i < vec->len; i++)
-        if (vec->pkgs[i]->solvable == solvable)
+        if (vec->pkgs[i]->id == id)
             return vec->pkgs[i];
     return NULL;
 }
