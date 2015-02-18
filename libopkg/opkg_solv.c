@@ -1254,6 +1254,38 @@ void list_packages(Queue *selection)
     queue_free(&packages);
 }
 
+void print_pkg_status(pkg_t *pkg)
+{
+    pkg_formatted_info(stdout, pkg);
+
+    if (opkg_config->verbosity >= NOTICE) {
+        conffile_list_elt_t *iter;
+        for (iter = nv_pair_list_first(&pkg->conffiles); iter;
+             iter = nv_pair_list_next(&pkg->conffiles, iter)) {
+            conffile_t *cf = (conffile_t *) iter->data;
+            int modified = conffile_has_been_modified(cf);
+            if (cf->value)
+                opkg_msg(INFO, "conffile=%s md5sum=%s modified=%d.\n",
+                        cf->name, cf->value, modified);
+        }
+    }
+}
+
+void list_pkg_status(Queue *selection)
+{
+    Queue packages;
+    pkg_t *pkg;
+    int i;
+
+    queue_init(&packages);
+    get_packages_from_selection(selection, &packages);
+    for (i = 0; i < packages.count; i++) {
+        pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, packages.elements[i]);
+        print_pkg_status(pkg);
+    }
+    queue_free(&packages);
+}
+
 void list_files(Queue *selection)
 {
     Queue packages;
@@ -1380,6 +1412,16 @@ int opkg_solv_process(str_list_t *pkg_names, opkg_solv_mode_t mode)
         queue_push2(&job, SOLVER_SOLVABLE_ALL, 0);
 
     if (mode == MODE_LIST || mode == MODE_LIST_INSTALLED)
+    {
+        list_packages(&job);
+        return 0;
+    }
+    if (mode == MODE_STATUS || mode == MODE_STATUS_INSTALLED)
+    {
+        list_pkg_status(&job);
+        return 0;
+    }
+    if (mode == MODE_STATUS_INSTALLED)
     {
         list_packages(&job);
         return 0;

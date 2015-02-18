@@ -715,6 +715,13 @@ static int opkg_list_upgradable_cmd(int argc, char **argv)
 
 static int opkg_info_status_cmd(int argc, char **argv, int installed_only)
 {
+    int err;
+    str_list_t *pkg_names;
+    populate_arch_list();
+    opkg_solv_prepare();
+    pkg_names = pkg_names_from_args(argc, argv);
+    err = opkg_solv_process(pkg_names, MODE_STATUS);
+    return err;
     //TODO: Implement
     #if 0
     unsigned int i, err;
