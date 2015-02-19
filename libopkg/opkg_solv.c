@@ -1188,6 +1188,20 @@ void prepare_recommends()
     queue_free(&excludes);
 }
 
+void clear_dependencies() {
+    Id p;
+    Solvable *s;
+    Queue empty;
+
+    queue_init(&empty);
+    Pool *pool = opkg_solv_pool;
+    FOR_POOL_SOLVABLES(p) {
+            s = pool_id2solvable(pool, p);
+            solvable_set_deparray(s, SOLVABLE_REQUIRES, &empty, -SOLVABLE_PREREQMARKER);
+        }
+    queue_free(&empty);
+}
+
 void prepare_job(Queue *job) {
     Repo *repo;
     pkg_t *pkg;
@@ -1452,10 +1466,14 @@ int opkg_solv_process(str_list_t *pkg_names, opkg_solv_mode_t mode)
     solv = solver_create(opkg_solv_pool);
     solver_set_flag(solv, SOLVER_FLAG_ALLOW_UNINSTALL, 1);
 
-    if (!opkg_config->no_install_recommends) {
-        prepare_recommends();
+    if (!opkg_config->force_depends) {
+        if (!opkg_config->no_install_recommends) {
+            prepare_recommends();
+        } else {
+            solver_set_flag(solv, SOLVER_FLAG_IGNORE_RECOMMENDED, 1);
+        }
     } else {
-        solver_set_flag(solv, SOLVER_FLAG_IGNORE_RECOMMENDED, 1);
+        clear_dependencies();
     }
 
     count = job.count;
