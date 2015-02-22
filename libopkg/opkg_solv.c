@@ -650,7 +650,6 @@ int process_job(Solver *solver, Queue *job)
     pkg_t *pkg;
     int mode, err, r;
     opkg_intercept_t ic;
-    Solvable *s;
 
     for (;;)
     {
@@ -664,11 +663,6 @@ int process_job(Solver *solver, Queue *job)
             printf("Found %d problems:\n", pcnt);
             for (problem = 1; problem <= pcnt; problem++) {
                 printf("Problem %d/%d:\n", problem, pcnt);
-                {
-                    Id dep, source, target;
-                    Id probr = solver_findproblemrule(solver, problem);
-                    SolverRuleinfo type = solver_ruleinfo(solver, probr, &source, &target, &dep);
-                }
                 solver_printprobleminfo(solver, problem);
                 printf("\n");
                 scnt = solver_solution_count(solver, problem);
@@ -917,13 +911,13 @@ int process_job(Solver *solver, Queue *job)
         type = transaction_type(trans, p, mode);
         //   printf("TYPE: %p, %s\n", type, pool_solvid2str(opkg_solv_pool, p));
         if ((type == SOLVER_TRANSACTION_DOWNGRADED) || (type == SOLVER_TRANSACTION_UPGRADED)) {
-            s = opkg_solv_pool->solvables + transaction_obs_pkg(trans, p);
+            pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, transaction_obs_pkg(trans, p));
         } else if (type == SOLVER_TRANSACTION_INSTALL) {
-            s = pool_id2solvable(opkg_solv_pool, p);
+            pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
         } else {
             continue;
         }
-        pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
+
         if (pkg->state_status == SS_UNPACKED) {
             opkg_msg(NOTICE, "Configuring %s.\n", pkg->name);
             r = opkg_configure(pkg);
