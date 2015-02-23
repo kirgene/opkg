@@ -717,12 +717,6 @@ int process_job(Solver *solver, Queue *job)
         printf("Nothing to do.\n");
         transaction_free(trans);
         return 0;
-        //        solver_free(solv);
-        //        queue_free(&job);
-        //        pool_free(pool);
-        //        free_repoinfos(repoinfos, nrepoinfos);
-        //        solv_free(commandlinepkgs);
-        //        exit(1);
     }
     /* display transaction to the user and ask for confirmation */
     printf("\n");
@@ -735,12 +729,6 @@ int process_job(Solver *solver, Queue *job)
         {
             printf("Abort.\n");
             transaction_free(trans);
-            //		solver_free(solv);
-            //		queue_free(&job);
-            //		pool_free(pool);
-            //		free_repoinfos(repoinfos, nrepoinfos);
-            //		solv_free(commandlinepkgs);
-            //		exit(1);
             return -1;
         }
     }
@@ -751,29 +739,6 @@ int process_job(Solver *solver, Queue *job)
     for (i = 0; i < newpkgs; i++)
     {
         p = checkq.elements[i];
-        /*
-           if (s->repo == commandlinerepo)
-           {
-           loc = solvable_lookup_location(s, &medianr);
-           if (!loc)
-           continue;
-           if (!(newpkgsfps[i] = fopen(loc, "r")))
-           {
-           perror(loc);
-           exit(1);
-           }
-           putchar('.');
-           continue;
-           }
-           */
-        /*
-           cinfo = s->repo->appdata;
-           if (!cinfo)
-           {
-           printf("%s: no repository information\n", s->repo->name);
-           exit(1);
-           }
-           */
         pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
         assert(pkg != NULL);
         if (pkg->provided_by_hand)
@@ -784,13 +749,6 @@ int process_job(Solver *solver, Queue *job)
                     "Perhaps you need to run 'opkg update'?\n", pkg->name);
             return -1;
         }
-        /*
-           if ((newpkgsfps[i] = curlfopen(cinfo, loc, 0, chksum, chksumtype, 0)) == 0)
-           {
-           printf("\n%s: %s not found in repository\n", s->repo->name, loc);
-           exit(1);
-           }
-           */
         fflush(stdout);
     }
     queue_free(&checkq);
@@ -813,7 +771,6 @@ int process_job(Solver *solver, Queue *job)
         pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
 
         type = transaction_type(trans, p, mode);
-     //   printf("TYPE: %p, %s\n", type, pool_solvid2str(opkg_solv_pool, p));
         switch(type)
         {
             case SOLVER_TRANSACTION_DOWNGRADED:
@@ -839,7 +796,6 @@ int process_job(Solver *solver, Queue *job)
                 }
                 break;
             default:
-                //				printf("AAAAAA: %p\n", type);
                 break;
         }
     }
@@ -859,50 +815,6 @@ int process_job(Solver *solver, Queue *job)
         return -1;
     }
     err = 0;
-
-#if 0
-    /* configure old packages first */
-    FOR_REPO_SOLVABLES(opkg_solv_pool->installed, p, s) {
-            int exists = 0;
-            pkg = pkg_vec_get_pkg_by_solvable(opkg_solv_pkgs, p);
-            if (pkg->state_want != SW_INSTALL || pkg->state_status != SS_UNPACKED)
-                continue;
-            // Check if solvable exists in current transaction
-            for (i = 0; i < trans->steps.count; i++) {
-                Solvable *s2;
-                Id type;
-
-                p = trans->steps.elements[i];
-                type = transaction_type(trans, p, mode);
-                if ((type == SOLVER_TRANSACTION_DOWNGRADED) || (type == SOLVER_TRANSACTION_UPGRADED)) {
-                    s2 = opkg_solv_pool->solvables + transaction_obs_pkg(trans, p);
-                } else {
-                    s2 = pool_id2solvable(opkg_solv_pool, p);
-                }
-                if (solvable_identical(s, s2)) {
-                    exists = 1;
-                    break;
-                }
-            }
-            if (exists) /* do not touch an about to change solvable */
-                continue;
-
-            /* found package that needs to be configured finaly before proceeding next */
-            opkg_msg(NOTICE, "Configuring %s.\n", pkg_get_str(pkg, PKG_FLD_NAME));
-            r = opkg_configure(pkg);
-            if (r == 0) {
-                pkg->state_status = SS_INSTALLED;
-                pkg->state_flag &= ~SF_PREFER;
-                pkg->state_flag |= SF_CHANGED;
-                pkg_write_status(pkg);
-            } else {
-                if (!opkg_config->offline_root)
-                    err = -1;
-            }
-        }
-
-    /* finally configure new packages */
-#endif
 
     for (i = 0; i < trans->steps.count; i++) {
         Id type;
@@ -1422,25 +1334,30 @@ int opkg_solv_process(str_list_t *pkg_names, opkg_solv_mode_t mode)
     if (mode == MODE_LIST || mode == MODE_LIST_INSTALLED)
     {
         list_packages(&job);
+        queue_free(&job);
         return 0;
     }
     if (mode == MODE_STATUS || mode == MODE_STATUS_INSTALLED)
     {
         list_pkg_status(&job);
+        queue_free(&job);
         return 0;
     }
     if (mode == MODE_STATUS_INSTALLED)
     {
         list_packages(&job);
+        queue_free(&job);
         return 0;
     }
     if (mode == MODE_FILES) {
         list_files(&job);
+        queue_free(&job);
         return 0;
     }
     if ((mode >= MODE_FLAG_HOLD) && (mode <= MODE_FLAG_UNPACKED)) {
         set_installed_packages_flag(&job, mode);
         write_all_status_files();
+        queue_free(&job);
         return 0;
     }
 
@@ -1454,6 +1371,7 @@ int opkg_solv_process(str_list_t *pkg_names, opkg_solv_mode_t mode)
         opmode = SOLVER_DISTUPGRADE;
     else {
         opkg_msg(ERROR, "Unknown mode %d.\n", mode);
+        queue_free(&job);
         return -1;
     }
 
@@ -1492,6 +1410,9 @@ int opkg_solv_process(str_list_t *pkg_names, opkg_solv_mode_t mode)
 		err = -1;
 
     write_all_status_files();
+
+    solver_free(solv);
+    queue_free(&job);
 
     return err;
 }
