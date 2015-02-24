@@ -823,13 +823,19 @@ int process_job(Solver *solver, Queue *job)
 
         p = trans->steps.elements[i];
         type = transaction_type(trans, p, mode);
-        //   printf("TYPE: %p, %s\n", type, pool_solvid2str(opkg_solv_pool, p));
-        if ((type == SOLVER_TRANSACTION_DOWNGRADED) || (type == SOLVER_TRANSACTION_UPGRADED)) {
-            pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, transaction_obs_pkg(trans, p));
-        } else if (type == SOLVER_TRANSACTION_INSTALL) {
-            pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
-        } else {
-            continue;
+        switch (type) {
+            case SOLVER_TRANSACTION_DOWNGRADED:
+            case SOLVER_TRANSACTION_UPGRADED:
+            case SOLVER_TRANSACTION_REINSTALLED:
+            case SOLVER_TRANSACTION_CHANGED:
+                pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, transaction_obs_pkg(trans, p));
+                break;
+            case SOLVER_TRANSACTION_INSTALL:
+            case SOLVER_TRANSACTION_MULTIINSTALL:
+                pkg = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, p);
+                break;
+            default:
+                continue;
         }
 
         if (pkg->state_status == SS_UNPACKED) {
