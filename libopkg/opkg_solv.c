@@ -631,6 +631,7 @@ void print_pkg_trans(Id type, pkg_t *pkg)
             s = "Installing";
             break;
         case SOLVER_TRANSACTION_REINSTALLED:
+        case SOLVER_TRANSACTION_CHANGED:
             s = "Reinstalling";
             break;
         default:
@@ -776,6 +777,7 @@ int process_job(Solver *solver, Queue *job)
             case SOLVER_TRANSACTION_DOWNGRADED:
             case SOLVER_TRANSACTION_UPGRADED:
             case SOLVER_TRANSACTION_REINSTALLED:
+            case SOLVER_TRANSACTION_CHANGED:
                 pkg2 = pkg_vec_get_pkg_by_id(opkg_solv_pkgs, transaction_obs_pkg(trans, p));
                 pkg2->dest = pkg->dest;
                 print_pkg_trans(type, pkg2);
