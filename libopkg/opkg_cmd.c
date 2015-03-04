@@ -528,8 +528,9 @@ static int opkg_upgrade_cmd(int argc, char **argv)
     pkg_names = pkg_names_from_args(argc, argv);
 #if 0
     err = opkg_solv_process(pkg_names, MODE_UPGRADE);
-#endif
+#else
     err = opkg_solv_process(pkg_names, MODE_DIST_UPGRADE);
+#endif
     return err;
 
 #if 0
