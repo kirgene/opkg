@@ -7,9 +7,9 @@ import opk, cfg, opkgcl
 opk.regress_init()
 
 o = opk.OpkGroup()
-o.add(Package="a", Version="1.0")
-o.add(Package="b", Version="1.0", Depends="a (= 1.0)")
-o.add(Package="c", Version="1.0", Depends="b")
+o.add(Package="a", Version="1.0", Depends="b")
+o.add(Package="b", Version="1.0")
+o.add(Package="c", Version="1.0", Depends="a (= 1.0)")
 
 o.write_opk()
 o.write_list()
@@ -27,14 +27,14 @@ if not opkgcl.is_installed("c"):
 o = opk.OpkGroup()
 
 # Make a new version of 'a', 'b' available
-o.add(Package="a", Version="2.0")
-o.add(Package="b", Version="2.0", Depends="a (= 2.0)")
-o.add(Package="c", Version="2.0", Depends="a (= 2.0), b (= 2.0)")
+o.add(Package="a", Version="2.0", Depends="b (= 2.0)")
+o.add(Package="b", Version="2.0", Provides="z")
+o.add(Package="c", Version="2.0", Depends="a (= 2.0)")
 o.write_opk()
 o.write_list()
 
 opkgcl.update()
-opkgcl.install("c")
+opkgcl.install("a")
 
 if not opkgcl.is_installed("a", "2.0"):
     opk.fail("New version of package 'a' available during upgrade but was not installed")

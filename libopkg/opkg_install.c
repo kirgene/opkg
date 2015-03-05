@@ -564,9 +564,15 @@ static int prerm_upgrade_old_pkg(pkg_t * pkg, pkg_t * old_pkg)
     err = pkg_run_script(old_pkg, "prerm", script_args);
     free(script_args);
     if (err != 0) {
-        opkg_msg(ERROR, "prerm script for package \"%s\" failed\n",
-                old_pkg->name);
-        return -1;
+        if (!opkg_config->force_remove) {
+            opkg_msg(ERROR,
+                    "not removing package \"%s\", " "prerm script failed\n",
+                    old_pkg->name);
+            opkg_msg(NOTICE,
+                    "You can force removal of packages with failed "
+                            "prerm scripts with the option: \n" "\t--force-remove\n");
+            return -1;
+        }
     }
     return 0;
 }
