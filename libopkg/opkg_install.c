@@ -977,6 +977,8 @@ static int check_data_file_clashes_unwind(pkg_t * pkg, pkg_t * old_pkg)
 
 static int postrm_upgrade_old_pkg(pkg_t * pkg, pkg_t * old_pkg)
 {
+#if 0
+    // Busybox upgrade crashes here so commit it for now
     int err;
     char *script_args;
 
@@ -991,6 +993,7 @@ static int postrm_upgrade_old_pkg(pkg_t * pkg, pkg_t * old_pkg)
                  old_pkg->name);
         return -1;
     }
+#endif
     return 0;
 }
 
