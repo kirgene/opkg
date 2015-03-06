@@ -574,6 +574,9 @@ static int prerm_upgrade_old_pkg(pkg_t * pkg, pkg_t * old_pkg)
             return -1;
         }
     }
+    /* Copy environment */
+    file_copy(old_pkg->envfile, pkg->envfile);
+
     return 0;
 }
 
@@ -646,6 +649,11 @@ static int preinst_configure(pkg_t * pkg, pkg_t * old_pkg)
     }
 
     free(preinst_args);
+
+    if (old_pkg) {
+        /* Copy environment */
+        file_copy(pkg->envfile, old_pkg->envfile);
+    }
 
     return 0;
 }
@@ -991,6 +999,9 @@ static int postrm_upgrade_old_pkg(pkg_t * pkg, pkg_t * old_pkg)
                  old_pkg->name);
         return -1;
     }
+    /* Copy environment */
+    file_copy(old_pkg->envfile, pkg->envfile);
+
     return 0;
 }
 
@@ -1310,6 +1321,11 @@ int opkg_install_pkg(pkg_t *old_pkg, pkg_t * pkg)
     if (old_pkg)
         pkg_remove_orphan_dependent(pkg, old_pkg);
 #endif
+
+    pkg_create_envfile(pkg);
+    if (old_pkg) {
+        pkg_create_envfile(old_pkg);
+    }
 
     err = prerm_upgrade_old_pkg(pkg, old_pkg);
     if (err)

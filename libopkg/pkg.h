@@ -109,6 +109,7 @@ struct pkg {
     struct active_list list;        /* Used for installing|upgrading */
     char *filename;
     char *local_filename;
+    char *envfile;
     char *tmp_unpack_dir;
     char *md5sum;
     char *sha256sum;
@@ -170,6 +171,7 @@ str_list_t *pkg_get_installed_files(pkg_t * pkg);
 void pkg_free_installed_files(pkg_t * pkg);
 void pkg_remove_installed_files_list(pkg_t * pkg);
 conffile_t *pkg_get_conffile(pkg_t * pkg, const char *file_name);
+void pkg_create_envfile(pkg_t * pkg);
 int pkg_run_script(pkg_t * pkg, const char *script, const char *args);
 
 /* enum mappings */

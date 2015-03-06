@@ -185,6 +185,7 @@ int opkg_remove_pkg(pkg_t * pkg)
     pkg->state_flag |= SF_FILELIST_CHANGED | SF_CHANGED;
     pkg->state_want = SW_DEINSTALL;
 
+    pkg_create_envfile(pkg);
     r = pkg_run_script(pkg, "prerm", "remove");
     if (r != 0) {
         if (!opkg_config->force_remove) {

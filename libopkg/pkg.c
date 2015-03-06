@@ -110,6 +110,7 @@ void pkg_init(pkg_t * pkg, Solvable *s)
 
     pkg->filename = NULL;
     pkg->local_filename = NULL;
+    pkg->envfile = NULL;
     pkg->tmp_unpack_dir = NULL;
     pkg->md5sum = NULL;
     pkg->sha256sum = NULL;
@@ -199,6 +200,12 @@ void pkg_deinit(pkg_t * pkg)
 
     free(pkg->local_filename);
     pkg->local_filename = NULL;
+
+    if (pkg->envfile) {
+        unlink(pkg->envfile);
+        free(pkg->envfile);
+        pkg->envfile = NULL;
+    }
 
     /* CLEANUP: It'd be nice to pullin the cleanup function from
      * opkg_install.c here. See comment in
@@ -1257,6 +1264,21 @@ conffile_t *pkg_get_conffile(pkg_t * pkg, const char *file_name)
     return NULL;
 }
 
+void pkg_create_envfile(pkg_t *pkg)
+{
+    int fd;
+    if (pkg->envfile)
+        return;
+    sprintf_alloc(&pkg->envfile, "%s/env-XXXXXX", opkg_config->tmp_dir);
+    fd = mkstemp(pkg->envfile);
+    if (fd == -1) {
+        opkg_perror(ERROR, "Failed to make temp file %s", opkg_config->tmp_dir);
+        free(pkg->envfile);
+        pkg->envfile = NULL;
+    }
+    close(fd);
+}
+
 int pkg_run_script(pkg_t * pkg, const char *script, const char *args)
 {
     int err;
@@ -1301,7 +1323,10 @@ int pkg_run_script(pkg_t * pkg, const char *script, const char *args)
         return 0;
     }
 
-    sprintf_alloc(&cmd, "%s %s", path, args);
+    /* Some packages may share environment variables within their scripts.
+    * Here we populate environment variables array from file and use it in xsystem_ex
+    * In turn xsystem_ex saves environment variables in envfile after execution */
+    sprintf_alloc(&cmd, ". %s && . %s %s && export > %s", pkg->envfile, path, args, pkg->envfile);
     free(path);
     {
         const char *argv[] = { "sh", "-c", cmd, NULL };
