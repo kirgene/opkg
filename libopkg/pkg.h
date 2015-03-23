@@ -187,7 +187,7 @@ int pkg_write_filelist(pkg_t * pkg);
 int pkg_write_status(pkg_t * pkg);
 int pkg_write_changed_filelists(void);
 
-int pkg_verify(pkg_t * pkg);
+int pkg_verify(pkg_t *pkg, int remove_corrupted);
 
 #ifdef __cplusplus
 }

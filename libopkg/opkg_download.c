@@ -255,7 +255,7 @@ int opkg_download_pkg(pkg_t *pkg)
     pkg->local_filename = filename;
 
     /* Check if valid package exists in cache */
-    if (!pkg_verify(pkg))
+    if (!pkg_verify(pkg, 0))
         return 0;
 
     opkg_msg(NOTICE, "Downloading %s (%s) ...\n", pkg->name, pkg->version);
@@ -265,7 +265,7 @@ int opkg_download_pkg(pkg_t *pkg)
         return -1;
 
     /* Ensure downloaded package is valid. */
-    return pkg_verify(pkg);
+    return pkg_verify(pkg, 1);
 }
 
 int opkg_download_pkg_to_dir(pkg_t * pkg, const char *dir)
@@ -287,7 +287,7 @@ int opkg_download_pkg_to_dir(pkg_t * pkg, const char *dir)
          * TODO: Clean this up!
          */
         pkg->local_filename = dest_file_name;
-        err = pkg_verify(pkg);
+        err = pkg_verify(pkg, 1);
     } else {
         const char *local_filename;
         err = opkg_download_pkg(pkg);

@@ -1439,7 +1439,7 @@ static int verify_checksum(const char *file, const unsigned char *chksum, Id chk
 	return err;
 }
 
-int pkg_verify(pkg_t *pkg)
+int pkg_verify(pkg_t *pkg, int remove_corrupted)
 {
 	const unsigned char *chksum;
 	int chksumtype;
@@ -1467,8 +1467,10 @@ int pkg_verify(pkg_t *pkg)
 	return 0;
 
  fail:
-    opkg_msg(NOTICE, "Removing corrupt package file %s.\n",
-             pkg->local_filename);
-    unlink(pkg->local_filename);
+     if (remove_corrupted) {
+         opkg_msg(NOTICE, "Removing corrupt package file %s.\n",
+                 pkg->local_filename);
+         unlink(pkg->local_filename);
+     }
     return -1;
 }
