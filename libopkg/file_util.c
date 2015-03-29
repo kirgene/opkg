@@ -537,15 +537,17 @@ int file_decompress(const char *in, const char *out)
     int r;
     struct opkg_ar *ar;
     FILE *f;
+    char *tmp_out;
 
     ar = ar_open_compressed_file(in);
     if (!ar)
         return -1;
 
+    sprintf_alloc (&tmp_out, "%s.@@", out);
     /* Open output file. */
-    f = fopen(out, "w");
+    f = fopen(tmp_out, "w");
     if (!f) {
-        opkg_msg(ERROR, "Failed to open output file '%s': %s\n", out,
+        opkg_msg(ERROR, "Failed to open output file '%s': %s\n", tmp_out,
                  strerror(errno));
         r = -1;
         goto cleanup;
@@ -563,6 +565,7 @@ int file_decompress(const char *in, const char *out)
     ar_close(ar);
     if (f)
         fclose(f);
-
+    rename(tmp_out, out);
+    free(tmp_out);
     return r;
 }
